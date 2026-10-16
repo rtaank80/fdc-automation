@@ -1,0 +1,86 @@
+{
+  "brand": {
+    "name": "FDC Cosmetics & Whitening (part of Family Dental Centre)",
+    "location": "Kingstanding, Birmingham",
+    "website": "https://fdc-invisalign-cosmetic.lovable.app/",
+    "instagram": "@fdc.dental",
+    "tone": "calm, warm, considered, reassuring; 'still you, just more confident'; never pushy",
+    "disclaimer": "Imagery is illustrative. Individual results vary.",
+    "base_hashtags": ["#FamilyDentalCentre", "#Birmingham", "#CosmeticDentistry"]
+  },
+  "image_style": "Soft natural daylight, clean modern premium editorial photography feel, warm neutral palette with fresh teal and white accents, shallow depth of field, calm and elegant. No text, no logos, no watermarks, no before/after split images, no exaggerated or unnaturally white teeth, no clinical or scary imagery.",
+  "themes": [
+    {
+      "id": "whitening-intro",
+      "topic": "Professional dentist-led teeth whitening",
+      "image": "A relaxed adult with a natural, gentle smile in soft daylight, bright but realistic teeth, tasteful lifestyle portrait",
+      "angle": "Why professional whitening is supervised by a dentist and tailored to you"
+    },
+    {
+      "id": "whitening-trays",
+      "topic": "Custom-fitted home whitening trays",
+      "image": "Clean flat-lay of clear custom whitening trays in a small case on a pale stone surface with a fresh green leaf",
+      "angle": "How custom trays work and why a dental check comes first"
+    },
+    {
+      "id": "invisalign-discreet",
+      "topic": "Invisalign clear aligners (FDC is an Invisalign Approved Practice)",
+      "image": "A clear aligner resting on a minimal pale surface, soft shadows, premium product-photography look",
+      "angle": "Discreet, removable aligners and a personal treatment plan"
+    },
+    {
+      "id": "bonding-finishing-touch",
+      "topic": "Composite bonding",
+      "image": "Abstract elegant still life suggesting refinement and balance: soft pearl tones, sculpted shapes, warm light",
+      "angle": "Small, thoughtful refinements to shape and balance"
+    },
+    {
+      "id": "confidence",
+      "topic": "Confidence and a natural smile",
+      "image": "A person laughing naturally outdoors in autumn light, candid and warm, teeth visible but natural",
+      "angle": "The most beautiful smile is one that feels like yours"
+    },
+    {
+      "id": "first-conversation",
+      "topic": "What happens at a cosmetic consultation",
+      "image": "A calm, welcoming modern dental reception with plants and warm lighting, no people",
+      "angle": "A conversation, a considered plan, a confident beginning; no pressure"
+    },
+    {
+      "id": "whitening-faq",
+      "topic": "Is teeth whitening suitable for everyone? (FAQ)",
+      "image": "Minimal graphic-style photograph: a pale teal background with a single glass of water and a soft shadow, calm and clean",
+      "angle": "Gently explain that suitability is assessed by a dentist; invite questions"
+    },
+    {
+      "id": "invisalign-faq",
+      "topic": "Is Invisalign suitable for me? (FAQ)",
+      "image": "A person looking thoughtfully and happily out of a sunlit window, soft smile, editorial style",
+      "angle": "Crowding, gaps or relapse after braces: assess first, then explain options"
+    },
+    {
+      "id": "combine-treatments",
+      "topic": "Combining cosmetic treatments in one plan",
+      "image": "Three simple objects arranged on a pale surface suggesting a journey in stages: a clear aligner, a small whitening tray and a soft pearl; elegant still life",
+      "angle": "A joined-up plan (for example Invisalign then whitening), tailored to you"
+    },
+    {
+      "id": "events-season",
+      "topic": "Feeling ready for the festive season and special occasions",
+      "image": "Warm festive evening lights softly blurred in the background, a person smiling naturally, cosy and elegant",
+      "angle": "Planning ahead for a smile you feel good about; book early for a consultation"
+    },
+    {
+      "id": "whitening-aftercare",
+      "topic": "Looking after your smile after whitening",
+      "image": "Morning bathroom shelf with a soft toothbrush, a glass and white towels in natural light, calm and tidy",
+      "angle": "Simple everyday habits; advice from your dental team"
+    },
+    {
+      "id": "dentist-led",
+      "topic": "Dentist-led, individually tailored care",
+      "image": "Abstract warm-toned composition of hands gently holding a small model of teeth, soft focus, caring tone, no faces",
+      "angle": "Why we listen before we recommend"
+    }
+  ]
+}
