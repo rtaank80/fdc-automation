@@ -93,6 +93,6 @@ jobs:
         env:
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           IMGBB_API_KEY: ${{ secrets.IMGBB_API_KEY }}
-          IMAGE_HOST: ${{ vars.IMAGE_HOST || 'imgbb' }}
+          IMAGE_HOST: ${{ vars.IMAGE_HOST || 'github' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python post_weekly.py publish ${{ inputs.dry_run && '--dry-run' || '' }}
