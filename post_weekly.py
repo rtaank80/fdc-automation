@@ -254,8 +254,8 @@ def cmd_generate(args: argparse.Namespace) -> None:
 
 # ---------------------------------------------------------------- hosting
 def host_image(path: Path) -> str:
-    """Instagram needs a public https URL for the image. Uses imgbb or a public GitHub repo."""
-    mode = os.getenv("IMAGE_HOST", "imgbb")
+    """Instagram needs a public https URL for the image. Uses a public GitHub repo (default) or imgbb."""
+    mode = os.getenv("IMAGE_HOST", "github")
     if mode == "imgbb":
         key = os.getenv("IMGBB_API_KEY") or sys.exit("IMGBB_API_KEY is not set")
         r = requests.post(
@@ -266,21 +266,27 @@ def host_image(path: Path) -> str:
         r.raise_for_status()
         return r.json()["data"]["url"]
     if mode == "github":
-        # Requires a PUBLIC repo and a token with contents:write (GITHUB_TOKEN in Actions works).
+        # Commits the image into the repo (images/ folder). The repo must be PUBLIC so Instagram can fetch it.
+        # In Actions, GITHUB_REPOSITORY and GITHUB_TOKEN are provided automatically (needs contents: write).
         repo = os.environ["GITHUB_REPOSITORY"]
         token = os.environ["GITHUB_TOKEN"]
         name = f"images/{dt.date.today().isoformat()}.jpg"
         api = f"https://api.github.com/repos/{repo}/contents/{name}"
         h = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
-        existing = requests.get(api, headers=h, timeout=30)
         body = {"message": f"Add post image {name}", "content": base64.b64encode(path.read_bytes()).decode()}
-        if existing.status_code == 200:
+        existing = requests.get(api, headers=h, timeout=30)
+        if existing.status_code == 200:  # re-run on the same day: overwrite
             body["sha"] = existing.json()["sha"]
         r = requests.put(api, headers=h, json=body, timeout=60)
-        r.raise_for_status()
-        url = f"https://raw.githubusercontent.com/{repo}/{os.getenv('GITHUB_REF_NAME', 'main')}/{name}"
-        time.sleep(10)  # let the CDN pick it up
-        return url
+        if r.status_code >= 400:
+            sys.exit(f"Could not save image to GitHub: {r.status_code} {r.text[:400]}")
+        url = r.json()["content"]["download_url"]
+        # Fail early (with a clear message) if the repo is private and Instagram could not fetch it.
+        for _ in range(6):
+            if requests.head(url, timeout=30).status_code == 200:
+                return url
+            time.sleep(5)
+        sys.exit(f"Image saved but is not publicly reachable at {url}. Is the repository public?")
     sys.exit(f"Unknown IMAGE_HOST '{mode}'")
 
 

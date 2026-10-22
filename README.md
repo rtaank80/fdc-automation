@@ -44,11 +44,11 @@ Meta asks for a public Privacy Policy URL (and a Data Deletion URL) before an ap
   5. Check Black Forest Labs' terms (bfl.ai/legal/terms-of-service) allow commercial use for your case.
   To use OpenAI instead, add the repo variable `IMAGE_PROVIDER=openai` and the secret `OPENAI_API_KEY`.
 - **Anthropic API key** for captions (optional; without it a safe template caption is used).
-- **imgbb API key** (free, imgbb.com) because Instagram needs a public image URL. Alternatively set variable `IMAGE_HOST=github` on a public repo.
+- **Image hosting:** nothing to set up. Instagram needs a public image URL, so the workflow saves each image into the `images/` folder of this repo (which must be **public**) using GitHub's built-in token. To use imgbb instead, set the repo variable `IMAGE_HOST=imgbb` and add the secret `IMGBB_API_KEY`.
 
 ### 4. Add them to GitHub
 Settings > Secrets and variables > Actions > New repository secret:
-`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `ANTHROPIC_API_KEY`, `IG_ACCESS_TOKEN`, `IMGBB_API_KEY`.
+`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `ANTHROPIC_API_KEY`, `IG_ACCESS_TOKEN`, `GH_PAT`.
 
 **Keeping the token alive:** Instagram tokens last 60 days. The workflow refreshes the token every week and saves the new one back into the `IG_ACCESS_TOKEN` secret, so it never expires as long as the automation keeps running. For this it needs one more secret, `GH_PAT`: create a fine-grained personal access token (GitHub > Settings > Developer settings) limited to this repository with **Secrets: Read and write** permission. Without it the posts still work, but you must replace the token by hand before day 60, and the run will show a warning.
 
