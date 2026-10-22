@@ -101,10 +101,23 @@ def _prompts(cfg: dict, theme: dict) -> tuple[str, str]:
 
 
 def _parse_caption_json(text: str, theme: dict) -> dict:
+    """Read the JSON a model returned. Models often put raw line breaks inside strings, or use code fences."""
     m = re.search(r"\{.*\}", text, re.S)
-    data = json.loads(m.group(0))
-    assert isinstance(data["caption"], str) and isinstance(data["hashtags"], list)
+    if not m:
+        raise ValueError(f"no JSON object in model output, which began: {text[:200]!r}")
+    try:
+        data = json.loads(m.group(0), strict=False)  # strict=False allows raw newlines inside strings
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{exc}; model output began: {text[:300]!r}") from exc
+    if not isinstance(data.get("caption"), str) or not data["caption"].strip():
+        raise ValueError(f"no usable 'caption' in model output: {str(data)[:200]}")
+    tags = data.get("hashtags", [])
+    if isinstance(tags, str):  # some models return "#a #b #c" instead of a list
+        tags = re.findall(r"#\w+", tags)
+    data["hashtags"] = [t for t in tags if isinstance(t, str)]
     data.setdefault("alt_text", f"Illustrative image: {theme['topic']}")
+    if not isinstance(data["alt_text"], str):
+        data["alt_text"] = f"Illustrative image: {theme['topic']}"
     return data
 
 
