@@ -29,6 +29,9 @@ jobs:
       - name: Generate draft (caption + image)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          IMAGE_PROVIDER: ${{ vars.IMAGE_PROVIDER || 'cloudflare' }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           THEME_ID: ${{ inputs.theme_id }}
         run: python post_weekly.py generate ${{ inputs.dry_run && '--dry-run' || '' }}
@@ -90,6 +93,6 @@ jobs:
         env:
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           IMGBB_API_KEY: ${{ secrets.IMGBB_API_KEY }}
-          IMAGE_HOST: ${{ vars.IMAGE_HOST || 'imgbb' }}
+          IMAGE_HOST: ${{ vars.IMAGE_HOST || 'github' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python post_weekly.py publish ${{ inputs.dry_run && '--dry-run' || '' }}
