@@ -14,7 +14,8 @@ on:
         required: false
 
 permissions:
-  contents: write   # only needed if IMAGE_HOST=github
+  contents: write   # saves the post image into the repo (IMAGE_HOST=github)
+  actions: read     # lets the publish step read your caption choice from the approval comment
 
 jobs:
   generate:
