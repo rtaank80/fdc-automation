@@ -78,10 +78,8 @@ def fallback_caption(cfg: dict, theme: dict) -> dict:
     }
 
 
-def llm_caption(cfg: dict, theme: dict) -> dict | None:
-    key = os.getenv("ANTHROPIC_API_KEY")
-    if not key:
-        return None
+def _prompts(cfg: dict, theme: dict) -> tuple[str, str]:
+    """The instructions sent to the AI models (Claude and Cloudflare share them)."""
     b = cfg["brand"]
     system = (
         "You write Instagram captions for a UK private dental practice. Follow UK dental "
@@ -99,6 +97,22 @@ def llm_caption(cfg: dict, theme: dict) -> dict | None:
         '  "hashtags": array of 8-10 relevant hashtags (include #Birmingham)\n'
         '  "alt_text": one plain sentence (under 120 chars) describing an illustrative image of the topic\n'
     )
+    return system, user
+
+
+def _parse_caption_json(text: str, theme: dict) -> dict:
+    m = re.search(r"\{.*\}", text, re.S)
+    data = json.loads(m.group(0))
+    assert isinstance(data["caption"], str) and isinstance(data["hashtags"], list)
+    data.setdefault("alt_text", f"Illustrative image: {theme['topic']}")
+    return data
+
+
+def claude_caption(cfg: dict, theme: dict) -> dict | None:
+    key = os.getenv("ANTHROPIC_API_KEY")
+    if not key:
+        return None
+    system, user = _prompts(cfg, theme)
     try:
         r = requests.post(
             "https://api.anthropic.com/v1/messages",
@@ -112,31 +126,55 @@ def llm_caption(cfg: dict, theme: dict) -> dict | None:
             timeout=90,
         )
         r.raise_for_status()
-        text = "".join(p.get("text", "") for p in r.json()["content"])
-        m = re.search(r"\{.*\}", text, re.S)
-        data = json.loads(m.group(0))
-        assert isinstance(data["caption"], str) and isinstance(data["hashtags"], list)
-        data.setdefault("alt_text", f"Illustrative image: {theme['topic']}")
-        return data
+        return _parse_caption_json("".join(p.get("text", "") for p in r.json()["content"]), theme)
     except Exception as exc:  # noqa: BLE001
-        log(f"Caption generation failed ({exc}); using fallback template.")
+        log(f"Claude caption failed ({exc}); skipping that option.")
         return None
 
 
-def compliant(text: str) -> bool:
+def cloudflare_caption(cfg: dict, theme: dict) -> dict | None:
+    account = os.getenv("CLOUDFLARE_ACCOUNT_ID")
+    token = os.getenv("CLOUDFLARE_API_TOKEN")
+    if not (account and token):
+        return None
+    system, user = _prompts(cfg, theme)
+    model = os.getenv("CAPTION_CF_MODEL", "@cf/meta/llama-3.3-70b-instruct-fp8-fast")
+    try:
+        r = requests.post(
+            f"https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/{model}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                "max_tokens": 900,
+            },
+            timeout=120,
+        )
+        r.raise_for_status()
+        result = r.json().get("result", {})
+        # Older models answer {"response": "..."}; newer ones use the OpenAI-style "choices" shape.
+        text = result.get("response")
+        if text is None and result.get("choices"):
+            text = result["choices"][0]["message"]["content"]
+        if not isinstance(text, str):
+            raise ValueError(f"unexpected response shape: {str(result)[:200]}")
+        return _parse_caption_json(text, theme)
+    except Exception as exc:  # noqa: BLE001
+        log(f"Cloudflare caption failed ({exc}); skipping that option.")
+        return None
+
+
+def compliant(text: str, label: str = "") -> bool:
     low = text.lower()
     hit = [w for w in BANNED if w in low]
     if hit:
-        log(f"Caption rejected, contains banned wording: {hit}")
+        log(f"{label} caption rejected, contains banned wording: {hit}")
     return not hit
 
 
-def build_caption(cfg: dict, theme: dict) -> dict:
-    data = llm_caption(cfg, theme)
-    if not data or not compliant(data["caption"]):
-        data = fallback_caption(cfg, theme)
+def finalise(cfg: dict, data: dict) -> dict:
+    """Add hashtags and the disclaimer, and respect Instagram's length limit."""
     b = cfg["brand"]
-    tags = []
+    tags: list[str] = []
     for t in data["hashtags"] + b["base_hashtags"]:
         t = "#" + re.sub(r"[^0-9A-Za-z_]", "", t.lstrip("#"))
         if len(t) > 1 and t.lower() not in [x.lower() for x in tags]:
@@ -146,6 +184,83 @@ def build_caption(cfg: dict, theme: dict) -> dict:
     if len(full) > 2150:  # Instagram limit is 2200
         full = full[:2147].rstrip() + "..."
     return {"caption": full, "alt_text": data["alt_text"][:300]}
+
+
+# Fixed option numbers, so "2" always means Claude whichever options are available that week.
+OPTIONS = [(1, "template", "Default template"), (2, "claude", "Claude"), (3, "cloudflare", "Cloudflare")]
+# Used when the reviewer does not choose: best writers first, template last.
+DEFAULT_ORDER = ["claude", "cloudflare", "template"]
+
+
+def build_candidates(cfg: dict, theme: dict, dry_run: bool = False) -> list[dict]:
+    makers = {
+        "template": lambda: fallback_caption(cfg, theme),
+        "claude": lambda: None if dry_run else claude_caption(cfg, theme),
+        "cloudflare": lambda: None if dry_run else cloudflare_caption(cfg, theme),
+    }
+    out = []
+    for num, cid, label in OPTIONS:
+        data = makers[cid]()
+        if not data:
+            continue
+        if not compliant(data["caption"], label):
+            continue
+        out.append({"number": num, "id": cid, "label": label, **finalise(cfg, data)})
+    return out
+
+
+def default_candidate(candidates: list[dict]) -> dict:
+    by_id = {c["id"]: c for c in candidates}
+    for cid in DEFAULT_ORDER:
+        if cid in by_id:
+            return by_id[cid]
+    return candidates[0]
+
+
+def parse_choice(text: str, candidates: list[dict]) -> dict | None:
+    """Read the reviewer's choice from free text such as '2', 'claude' or 'go with cloudflare'."""
+    low = (text or "").lower()
+    for c in candidates:
+        if c["id"] in low or (c["id"] == "template" and "default" in low):
+            return c
+    m = re.search(r"[1-3]", low)
+    if m:
+        for c in candidates:
+            if c["number"] == int(m.group(0)):
+                return c
+    return None
+
+
+def approval_comment() -> str | None:
+    """The comment the reviewer typed when approving the deployment in GitHub, if any."""
+    repo, run_id, token = os.getenv("GITHUB_REPOSITORY"), os.getenv("GITHUB_RUN_ID"), os.getenv("GITHUB_TOKEN")
+    if not (repo and run_id and token):
+        return None
+    try:
+        r = requests.get(
+            f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/approvals",
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+            timeout=30,
+        )
+        r.raise_for_status()
+        for item in r.json():  # newest first
+            if item.get("state") == "approved" and (item.get("comment") or "").strip():
+                return item["comment"]
+    except Exception as exc:  # noqa: BLE001
+        log(f"Could not read the approval comment ({exc}); using the default caption.")
+    return None
+
+
+def choose_candidate(draft: dict) -> dict:
+    candidates = draft["candidates"]
+    forced = os.getenv("CAPTION_CHOICE")  # optional manual override, e.g. for local runs
+    comment = forced or approval_comment()
+    picked = parse_choice(comment, candidates) if comment else None
+    if comment and not picked:
+        log(f"Could not match '{comment}' to an available caption; using the default.")
+    chosen = picked or default_candidate(candidates)
+    log(f"Caption used: option {chosen['number']} ({chosen['label']})")
+    return chosen
 
 
 # ---------------------------------------------------------------- image
@@ -231,24 +346,41 @@ def generate_image(cfg: dict, theme: dict, path: Path, dry_run: bool) -> str:
     return prompt
 
 
+def draft_markdown(theme: dict, candidates: list[dict]) -> str:
+    lines = [f"# Draft post: {theme['topic']}", ""]
+    avail = ", ".join(f"**{c['number']}** = {c['label']}" for c in candidates)
+    lines += [
+        "**To choose a caption:** click *Review deployments*, type the option number or name in the "
+        f"comment box, then *Approve*. Options this week: {avail}.",
+        "If you leave the comment empty, the default (" + default_candidate(candidates)["label"] + ") is used.",
+        "",
+    ]
+    for c in candidates:
+        lines += [f"## Option {c['number']}: {c['label']}", "", f"_Alt text: {c['alt_text']}_", "", c["caption"], "", "---", ""]
+    return "\n".join(lines)
+
+
 def cmd_generate(args: argparse.Namespace) -> None:
     cfg = load_config()
     theme = pick_theme(cfg)
     OUT.mkdir(exist_ok=True)
     log(f"Theme this week: {theme['id']} ({theme['topic']})")
-    cap = build_caption(cfg, theme)
+    candidates = build_candidates(cfg, theme, args.dry_run)
+    if not candidates:
+        sys.exit("No caption passed the compliance check.")
+    log("Caption options: " + ", ".join(f"{c['number']}={c['label']}" for c in candidates))
     prompt = generate_image(cfg, theme, OUT / "image.jpg", args.dry_run)
+    default = default_candidate(candidates)
     draft = {
         "theme": theme["id"],
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "image_prompt": prompt,
-        **cap,
+        "candidates": candidates,
+        "caption": default["caption"],  # the default choice, kept for simple tools
+        "alt_text": default["alt_text"],
     }
     (OUT / "draft.json").write_text(json.dumps(draft, indent=2, ensure_ascii=False), encoding="utf-8")
-    (OUT / "draft.md").write_text(
-        f"# Draft post: {theme['topic']}\n\n**Alt text:** {cap['alt_text']}\n\n---\n\n{cap['caption']}\n",
-        encoding="utf-8",
-    )
+    (OUT / "draft.md").write_text(draft_markdown(theme, candidates), encoding="utf-8")
     log("Draft written to out/ (draft.json, draft.md, image.jpg)")
 
 
@@ -319,15 +451,16 @@ def publish_to_instagram(image_url: str, caption: str, alt_text: str) -> str:
 def cmd_publish(args: argparse.Namespace) -> None:
     draft = json.loads((OUT / "draft.json").read_text(encoding="utf-8"))
     image = OUT / "image.jpg"
+    chosen = choose_candidate(draft)
     if args.dry_run:
         log("DRY RUN: would host image and publish this caption:")
-        print("-" * 60 + f"\n{draft['caption']}\n" + "-" * 60)
+        print("-" * 60 + f"\n{chosen['caption']}\n" + "-" * 60)
         return
     if not os.getenv("IG_ACCESS_TOKEN"):
         sys.exit("IG_ACCESS_TOKEN is not set")
     url = host_image(image)
     log(f"Image hosted at {url}")
-    media_id = publish_to_instagram(url, draft["caption"], draft["alt_text"])
+    media_id = publish_to_instagram(url, chosen["caption"], chosen["alt_text"])
     log(f"Published to Instagram. Media id: {media_id}")
 
 

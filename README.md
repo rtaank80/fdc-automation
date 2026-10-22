@@ -55,6 +55,14 @@ Settings > Secrets and variables > Actions > New repository secret:
 ### 5. Turn on approval (recommended)
 Settings > Environments > New environment named **`instagram-approval`** > tick *Required reviewers* and add yourself. Each week you get an email; open the run, read the draft in the summary, click **Approve**. Leave it without reviewers and it posts fully automatically.
 
+### Choosing between caption options
+Each week the draft offers up to three captions, and the reviewer picks one when approving:
+- **Option 1: Default template** (always available; fixed wording from `post_weekly.py`)
+- **Option 2: Claude** (only if the `ANTHROPIC_API_KEY` secret is set)
+- **Option 3: Cloudflare** (uses your Cloudflare keys; model `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, change it with the repo variable or env `CAPTION_CF_MODEL`)
+
+An option is left out if its service fails or its caption contains banned wording. To choose: open the run on the Actions tab, read the options in the run summary, click **Review deployments**, type `1`, `2`, `3` (or `claude`, `cloudflare`, `template`) in the comment box and click **Approve**. With no comment, the default is Claude, then Cloudflare, then the template. This needs the `instagram-approval` environment with a required reviewer (step 5 above); without one, the default caption is posted automatically.
+
 ### 6. Test
 Actions tab > *Weekly Instagram post* > **Run workflow** with *Dry run* ticked. Then run once with it unticked to make the first real post.
 
