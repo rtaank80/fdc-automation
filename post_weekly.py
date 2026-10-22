@@ -27,7 +27,7 @@ import requests
 
 ROOT = Path(__file__).parent
 OUT = ROOT / "out"
-GRAPH = os.getenv("GRAPH_VERSION", "v23.0")
+GRAPH = os.getenv("GRAPH_VERSION", "v25.0")
 # Instagram API with Instagram Login: no Facebook Page needed.
 IG_BASE = "https://graph.instagram.com"
 
@@ -159,19 +159,8 @@ def make_placeholder(theme: dict, path: Path) -> None:
     img.save(path, "JPEG", quality=92)
 
 
-def generate_image(cfg: dict, theme: dict, path: Path, dry_run: bool) -> str:
-    prompt = (
-        f"{theme['image']}. Topic: {theme['topic']}. Style: {cfg['image_style']} "
-        "Square composition, leave natural breathing room. Realistic, tasteful, not stock-photo cliché."
-    )
-    key = os.getenv("OPENAI_API_KEY")
-    if dry_run or not key:
-        if not dry_run:
-            sys.exit("OPENAI_API_KEY is not set. Use --dry-run or set the key.")
-        make_placeholder(theme, path)
-        return prompt
-    from PIL import Image
-
+def _openai_image(prompt: str) -> bytes:
+    key = os.getenv("OPENAI_API_KEY") or sys.exit("OPENAI_API_KEY is not set.")
     r = requests.post(
         "https://api.openai.com/v1/images/generations",
         headers={"Authorization": f"Bearer {key}"},
@@ -184,14 +173,61 @@ def generate_image(cfg: dict, theme: dict, path: Path, dry_run: bool) -> str:
         timeout=240,
     )
     if r.status_code >= 400:
-        sys.exit(f"Image generation failed: {r.status_code} {r.text[:400]}")
+        sys.exit(f"OpenAI image generation failed: {r.status_code} {r.text[:400]}")
     item = r.json()["data"][0]
     if "b64_json" in item:
-        raw = base64.b64decode(item["b64_json"])
+        return base64.b64decode(item["b64_json"])
+    return requests.get(item["url"], timeout=120).content
+
+
+def _cloudflare_image(prompt: str) -> bytes:
+    """Cloudflare Workers AI REST API. FLUX.2 models take multipart/form-data."""
+    account = os.getenv("CLOUDFLARE_ACCOUNT_ID") or sys.exit("CLOUDFLARE_ACCOUNT_ID is not set.")
+    token = os.getenv("CLOUDFLARE_API_TOKEN") or sys.exit("CLOUDFLARE_API_TOKEN is not set.")
+    model = os.getenv("IMAGE_MODEL", "@cf/black-forest-labs/flux-2-klein-9b")
+    fields = {"prompt": prompt, "width": "1024", "height": "1024"}
+    r = requests.post(
+        f"https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/{model}",
+        headers={"Authorization": f"Bearer {token}"},
+        files={k: (None, v) for k, v in fields.items()},  # forces multipart/form-data
+        timeout=240,
+    )
+    if r.status_code >= 400:
+        sys.exit(f"Cloudflare image generation failed: {r.status_code} {r.text[:500]}")
+    ctype = r.headers.get("content-type", "")
+    if ctype.startswith("image/"):
+        return r.content
+    body = r.json()
+    result = body.get("result", body)
+    b64 = result.get("image") if isinstance(result, dict) else None
+    if not b64:
+        sys.exit(f"Cloudflare response had no image field: {str(body)[:500]}")
+    return base64.b64decode(b64)
+
+
+def generate_image(cfg: dict, theme: dict, path: Path, dry_run: bool) -> str:
+    prompt = (
+        f"{theme['image']}. Topic: {theme['topic']}. Style: {cfg['image_style']} "
+        "Square composition, leave natural breathing room. Realistic, tasteful, not stock-photo cliché."
+    )
+    if dry_run:
+        make_placeholder(theme, path)
+        return prompt
+    from PIL import Image
+
+    provider = os.getenv("IMAGE_PROVIDER", "cloudflare").lower()
+    if provider == "cloudflare":
+        raw = _cloudflare_image(prompt)
+    elif provider == "openai":
+        raw = _openai_image(prompt)
     else:
-        raw = requests.get(item["url"], timeout=120).content
+        sys.exit(f"Unknown IMAGE_PROVIDER '{provider}' (use 'cloudflare' or 'openai')")
+    log(f"Image generated with {provider}")
     # Instagram only accepts JPEG for feed images.
-    Image.open(io.BytesIO(raw)).convert("RGB").save(path, "JPEG", quality=93)
+    img = Image.open(io.BytesIO(raw)).convert("RGB")
+    if img.size != (1080, 1080):
+        img = img.resize((1080, 1080), Image.LANCZOS)
+    img.save(path, "JPEG", quality=93)
     return prompt
 
 

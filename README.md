@@ -18,21 +18,37 @@ Cost is roughly a few pence per post for the image and caption. GitHub Actions i
 Create a repo, push this folder to it. Use a **public** repo if you want the free approval gate (private repos need a paid GitHub plan for required reviewers). Secrets stay private either way.
 
 ### 2. Get your Instagram token (no Facebook Page needed)
-This uses Meta's **Instagram API with Instagram Login**.
-1. In the Instagram app, make sure @fdc.dental is a **Business or Creator** account (Settings > Account type and tools).
-2. Go to developers.facebook.com, create an app (type: Business) and add the **Instagram** product, choosing "API setup with Instagram login".
-3. In the app's Instagram settings, **add your Instagram account** (role: Instagram tester). Accept the invite in the Instagram app under Settings > Website permissions > Apps and websites > Tester invites.
-4. Click **Generate token** for @fdc.dental and approve the permissions `instagram_business_basic` and `instagram_business_content_publish`. Copy the token. If Meta gives you a short-lived token, exchange it for a long-lived one (valid 60 days) using `GET https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=APP_SECRET&access_token=SHORT_TOKEN`.
-5. Posting to your own account works while the app is in development mode; no App Review needed.
+Uses Meta's **Instagram API with Instagram Login**. Follow these in order:
+1. **Account:** @fdc.dental must be a Business or Creator account (Instagram app > Settings > Account type and tools).
+2. **Developer login:** sign in at developers.facebook.com with a personal Facebook account and register as a developer.
+3. **Create the app:** My Apps > Create app. Choose the *Business* app type (other types will not show the right Instagram options). Give it a name such as "FDC Instagram Poster".
+4. **Add Instagram:** in the app dashboard add the **Instagram** product, then open **Instagram > API setup with Instagram business login**.
+5. **Connect the account:** on that page, add @fdc.dental if it is not listed (it will ask you to sign in to Instagram). If Meta says the account needs a role, add it under App roles as an Instagram tester and accept the invite in the Instagram app (Settings > Website permissions > Apps and websites > Tester invites).
+6. **Generate token:** click **Generate token** next to @fdc.dental, sign in to Instagram, approve the permissions (`instagram_business_basic` and `instagram_business_content_publish`) and copy the token. Tokens made this way are already long-lived (60 days), so no exchange step is needed.
+7. **Verify it:** run `curl "https://graph.instagram.com/v25.0/me?fields=user_id,username&access_token=YOUR_TOKEN"`. It should return `@fdc.dental`'s username. If the username is wrong, the token belongs to the wrong account.
+8. Posting to your own account works with Standard Access, so you can leave the app in development mode and skip App Review.
+
+### Privacy policy page (required by Meta)
+Meta asks for a public Privacy Policy URL (and a Data Deletion URL) before an app can go live. `docs/privacy.html` is a ready-made policy for this app.
+1. In your GitHub repo go to Settings > Pages, set Source to *Deploy from a branch*, branch `main`, folder `/docs`, and save.
+2. After a minute the page is at `https://YOUR-USERNAME.github.io/YOUR-REPO/privacy.html` (GitHub Pages on a private repo needs a paid plan; use a public repo, which is safe because secrets are never in the code).
+3. In the Meta app dashboard go to App settings > Basic and paste that URL into **Privacy Policy URL**. For **User data deletion** choose *Data deletion instructions URL* and paste the same URL followed by `#data-deletion`.
+4. Check the contact details and wording in the file are right for the practice before publishing.
 
 ### 3. Other keys
-- **OpenAI API key** for image generation (`gpt-image-1`).
+- **Cloudflare Workers AI** for image generation (FLUX.2 klein 9B, free tier covers one image a week):
+  1. Sign up free at dash.cloudflare.com.
+  2. Open **AI > Workers AI**, choose **Use REST API**, and copy your **Account ID**.
+  3. Click **Create a Workers AI API Token**, accept the prefilled settings (needs "Workers AI - Read" and "Edit"), create it and copy the token.
+  4. Add GitHub secrets `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`.
+  5. Check Black Forest Labs' terms (bfl.ai/legal/terms-of-service) allow commercial use for your case.
+  To use OpenAI instead, add the repo variable `IMAGE_PROVIDER=openai` and the secret `OPENAI_API_KEY`.
 - **Anthropic API key** for captions (optional; without it a safe template caption is used).
 - **imgbb API key** (free, imgbb.com) because Instagram needs a public image URL. Alternatively set variable `IMAGE_HOST=github` on a public repo.
 
 ### 4. Add them to GitHub
 Settings > Secrets and variables > Actions > New repository secret:
-`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `IG_ACCESS_TOKEN`, `IMGBB_API_KEY`.
+`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `ANTHROPIC_API_KEY`, `IG_ACCESS_TOKEN`, `IMGBB_API_KEY`.
 
 **Keeping the token alive:** Instagram tokens last 60 days. The workflow refreshes the token every week and saves the new one back into the `IG_ACCESS_TOKEN` secret, so it never expires as long as the automation keeps running. For this it needs one more secret, `GH_PAT`: create a fine-grained personal access token (GitHub > Settings > Developer settings) limited to this repository with **Secrets: Read and write** permission. Without it the posts still work, but you must replace the token by hand before day 60, and the run will show a warning.
 
