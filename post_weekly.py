@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Weekly Instagram post generator and publisher for FDC Cosmetics & Whitening.
+"""Weekly Instagram post for FDC Cosmetics & Whitening.
 
-Two stages so a human can approve in between:
+Stages:
 
-    python post_weekly.py generate   -> writes out/draft.json + out/image.jpg
-    python post_weekly.py publish    -> hosts the image and posts it to Instagram
+    python post_weekly.py generate   -> builds a draft (up to 3 captions + an image) and emails the approver
+    python post_weekly.py publish    -> posts the approved option from a draft (started by the approval Worker)
     python post_weekly.py refresh    -> extends the Instagram token by 60 days
 
-Add --dry-run to either stage to avoid any paid API call or real post.
+Add --dry-run to avoid paid API calls (generate) or a real post (publish).
 Everything is configured by environment variables (see .env.example).
 """
 from __future__ import annotations
@@ -18,24 +18,38 @@ import datetime as dt
 import io
 import json
 import os
+import random
 import re
+import shutil
 import sys
 import time
+import zipfile
 from pathlib import Path
 
 import requests
+
+import approval_email
 
 ROOT = Path(__file__).parent
 OUT = ROOT / "out"
 GRAPH = os.getenv("GRAPH_VERSION", "v25.0")
 # Instagram API with Instagram Login: no Facebook Page needed.
 IG_BASE = "https://graph.instagram.com"
+DRAFT_DAYS = 5  # the draft and its email links expire after this many days
+MAX_REGENS = 3  # regenerations allowed per week (enforced by the Worker, shown in the email)
 
 # Words and phrases that must never appear in a dental advert (ASA/CAP and GDC style guidance).
 BANNED = [
     "guarantee", "guaranteed", "best dentist", "cheapest", "painless", "risk-free",
     "100%", "miracle", "instant results", "permanent whitening", "cure", "no risk",
     "before and after", "before & after", "discount", "% off", "limited offer",
+]
+
+VARIATIONS = [
+    "Try a different camera angle and framing.",
+    "Use a different colour balance and lighting mood.",
+    "Use a noticeably different composition.",
+    "Change the setting and background while keeping the same idea.",
 ]
 
 
@@ -45,6 +59,11 @@ def log(msg: str) -> None:
 
 def load_config() -> dict:
     return json.loads((ROOT / "themes.json").read_text(encoding="utf-8"))
+
+
+def iso_week(today: dt.date | None = None) -> str:
+    year, week, _ = (today or dt.date.today()).isocalendar()
+    return f"{year}-W{week:02d}"
 
 
 def pick_theme(cfg: dict, today: dt.date | None = None) -> dict:
@@ -78,7 +97,7 @@ def fallback_caption(cfg: dict, theme: dict) -> dict:
     }
 
 
-def _prompts(cfg: dict, theme: dict) -> tuple[str, str]:
+def _prompts(cfg: dict, theme: dict, avoid: list[str] | None = None) -> tuple[str, str]:
     """The instructions sent to the AI models (Claude and Cloudflare share them)."""
     b = cfg["brand"]
     system = (
@@ -97,6 +116,12 @@ def _prompts(cfg: dict, theme: dict) -> tuple[str, str]:
         '  "hashtags": array of 8-10 relevant hashtags (include #Birmingham)\n'
         '  "alt_text": one plain sentence (under 120 chars) describing an illustrative image of the topic\n'
     )
+    if avoid:
+        shown = "\n".join(f"- {a[:300]!r}" for a in avoid)
+        user += (
+            "\nThese captions were already offered and not chosen. Write something clearly different "
+            f"in its opening line, structure and wording:\n{shown}\n"
+        )
     return system, user
 
 
@@ -121,11 +146,11 @@ def _parse_caption_json(text: str, theme: dict) -> dict:
     return data
 
 
-def claude_caption(cfg: dict, theme: dict) -> dict | None:
+def claude_caption(cfg: dict, theme: dict, avoid: list[str] | None = None) -> dict | None:
     key = os.getenv("ANTHROPIC_API_KEY")
     if not key:
         return None
-    system, user = _prompts(cfg, theme)
+    system, user = _prompts(cfg, theme, avoid)
     try:
         r = requests.post(
             "https://api.anthropic.com/v1/messages",
@@ -145,12 +170,12 @@ def claude_caption(cfg: dict, theme: dict) -> dict | None:
         return None
 
 
-def cloudflare_caption(cfg: dict, theme: dict) -> dict | None:
+def cloudflare_caption(cfg: dict, theme: dict, avoid: list[str] | None = None) -> dict | None:
     account = os.getenv("CLOUDFLARE_ACCOUNT_ID")
     token = os.getenv("CLOUDFLARE_API_TOKEN")
     if not (account and token):
         return None
-    system, user = _prompts(cfg, theme)
+    system, user = _prompts(cfg, theme, avoid)
     model = os.getenv("CAPTION_CF_MODEL", "@cf/meta/llama-3.3-70b-instruct-fp8-fast")
     try:
         r = requests.post(
@@ -201,15 +226,13 @@ def finalise(cfg: dict, data: dict) -> dict:
 
 # Fixed option numbers, so "2" always means Claude whichever options are available that week.
 OPTIONS = [(1, "template", "Default template"), (2, "claude", "Claude"), (3, "cloudflare", "Cloudflare")]
-# Used when the reviewer does not choose: best writers first, template last.
-DEFAULT_ORDER = ["claude", "cloudflare", "template"]
 
 
-def build_candidates(cfg: dict, theme: dict, dry_run: bool = False) -> list[dict]:
+def build_candidates(cfg: dict, theme: dict, dry_run: bool = False, avoid: list[str] | None = None) -> list[dict]:
     makers = {
         "template": lambda: fallback_caption(cfg, theme),
-        "claude": lambda: None if dry_run else claude_caption(cfg, theme),
-        "cloudflare": lambda: None if dry_run else cloudflare_caption(cfg, theme),
+        "claude": lambda: None if dry_run else claude_caption(cfg, theme, avoid),
+        "cloudflare": lambda: None if dry_run else cloudflare_caption(cfg, theme, avoid),
     }
     out = []
     for num, cid, label in OPTIONS:
@@ -220,60 +243,6 @@ def build_candidates(cfg: dict, theme: dict, dry_run: bool = False) -> list[dict
             continue
         out.append({"number": num, "id": cid, "label": label, **finalise(cfg, data)})
     return out
-
-
-def default_candidate(candidates: list[dict]) -> dict:
-    by_id = {c["id"]: c for c in candidates}
-    for cid in DEFAULT_ORDER:
-        if cid in by_id:
-            return by_id[cid]
-    return candidates[0]
-
-
-def parse_choice(text: str, candidates: list[dict]) -> dict | None:
-    """Read the reviewer's choice from free text such as '2', 'claude' or 'go with cloudflare'."""
-    low = (text or "").lower()
-    for c in candidates:
-        if c["id"] in low or (c["id"] == "template" and "default" in low):
-            return c
-    m = re.search(r"[1-3]", low)
-    if m:
-        for c in candidates:
-            if c["number"] == int(m.group(0)):
-                return c
-    return None
-
-
-def approval_comment() -> str | None:
-    """The comment the reviewer typed when approving the deployment in GitHub, if any."""
-    repo, run_id, token = os.getenv("GITHUB_REPOSITORY"), os.getenv("GITHUB_RUN_ID"), os.getenv("GITHUB_TOKEN")
-    if not (repo and run_id and token):
-        return None
-    try:
-        r = requests.get(
-            f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/approvals",
-            headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
-            timeout=30,
-        )
-        r.raise_for_status()
-        for item in r.json():  # newest first
-            if item.get("state") == "approved" and (item.get("comment") or "").strip():
-                return item["comment"]
-    except Exception as exc:  # noqa: BLE001
-        log(f"Could not read the approval comment ({exc}); using the default caption.")
-    return None
-
-
-def choose_candidate(draft: dict) -> dict:
-    candidates = draft["candidates"]
-    forced = os.getenv("CAPTION_CHOICE")  # optional manual override, e.g. for local runs
-    comment = forced or approval_comment()
-    picked = parse_choice(comment, candidates) if comment else None
-    if comment and not picked:
-        log(f"Could not match '{comment}' to an available caption; using the default.")
-    chosen = picked or default_candidate(candidates)
-    log(f"Caption used: option {chosen['number']} ({chosen['label']})")
-    return chosen
 
 
 # ---------------------------------------------------------------- image
@@ -333,11 +302,13 @@ def _cloudflare_image(prompt: str) -> bytes:
     return base64.b64decode(b64)
 
 
-def generate_image(cfg: dict, theme: dict, path: Path, dry_run: bool) -> str:
+def generate_image(cfg: dict, theme: dict, path: Path, dry_run: bool, variation: bool = False) -> str:
     prompt = (
         f"{theme['image']}. Topic: {theme['topic']}. Style: {cfg['image_style']} "
         "Square composition, leave natural breathing room. Realistic, tasteful, not stock-photo cliché."
     )
+    if variation:  # a regenerated image should look different from the one it replaces
+        prompt += " " + random.choice(VARIATIONS)
     if dry_run:
         make_placeholder(theme, path)
         return prompt
@@ -359,42 +330,121 @@ def generate_image(cfg: dict, theme: dict, path: Path, dry_run: bool) -> str:
     return prompt
 
 
-def draft_markdown(theme: dict, candidates: list[dict]) -> str:
-    lines = [f"# Draft post: {theme['topic']}", ""]
-    avail = ", ".join(f"**{c['number']}** = {c['label']}" for c in candidates)
-    lines += [
-        "**To choose a caption:** click *Review deployments*, type the option number or name in the "
-        f"comment box, then *Approve*. Options this week: {avail}.",
-        "If you leave the comment empty, the default (" + default_candidate(candidates)["label"] + ") is used.",
-        "",
+# ---------------------------------------------------------------- drafts (kept as workflow artifacts)
+def fetch_draft(run_id: str, dest: Path) -> dict:
+    """Download the 'draft' artifact of an earlier workflow run into dest and return its draft.json."""
+    repo = os.getenv("GITHUB_REPOSITORY") or sys.exit("GITHUB_REPOSITORY is not set (this runs inside GitHub Actions).")
+    token = os.getenv("GITHUB_TOKEN") or sys.exit("GITHUB_TOKEN is not set.")
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+    r = requests.get(
+        f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/artifacts",
+        headers=headers, params={"name": "draft"}, timeout=30,
+    )
+    r.raise_for_status()
+    found = [a for a in r.json().get("artifacts", []) if not a.get("expired")]
+    if not found:
+        sys.exit(f"No unexpired 'draft' artifact found for run {run_id}.")
+    z = requests.get(found[0]["archive_download_url"], headers=headers, timeout=120)
+    z.raise_for_status()
+    dest.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(io.BytesIO(z.content)) as zf:
+        zf.extractall(dest)
+    return json.loads((dest / "draft.json").read_text(encoding="utf-8"))
+
+
+def draft_markdown(draft: dict) -> str:
+    when = dt.datetime.fromtimestamp(draft["expires_at"], dt.timezone.utc).strftime("%Y-%m-%d %H:%M")
+    lines = [
+        f"# Draft: {draft['topic']}", "",
+        f"Mode: {draft['mode']} | regenerations used this week: {draft['regens_used']} | expires {when} UTC", "",
     ]
-    for c in candidates:
-        lines += [f"## Option {c['number']}: {c['label']}", "", f"_Alt text: {c['alt_text']}_", "", c["caption"], "", "---", ""]
+    for c in draft["candidates"]:
+        lines += [f"## Option {c['number']}: {c['label']}", "", c["caption"], "", "---", ""]
     return "\n".join(lines)
+
+
+def send_approval_email(draft: dict, image: bytes, dry_run: bool) -> None:
+    needed = ["APPROVAL_BASE_URL", "LINK_SECRET", "APPROVER_EMAIL", "SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD"]
+    missing = [n for n in needed if not os.getenv(n)]
+    if missing:
+        text = "Approval email NOT sent; missing settings: " + ", ".join(missing)
+        if dry_run:
+            log(text + " (fine for a dry run)")
+            return
+        sys.exit(text)
+    msg, html_doc, _ = approval_email.build_message(
+        draft,
+        image,
+        base_url=os.environ["APPROVAL_BASE_URL"],
+        key=os.environ["LINK_SECRET"],
+        to_addr=os.environ["APPROVER_EMAIL"],
+        from_addr=os.getenv("MAIL_FROM") or os.environ["SMTP_USER"],
+        draft_id=os.getenv("DRAFT_RUN_ID") or "local",
+        max_regens=MAX_REGENS,
+    )
+    (OUT / "email-preview.html").write_text(approval_email.preview_html(html_doc, image), encoding="utf-8")
+    try:
+        approval_email.send(
+            msg, os.environ["SMTP_HOST"], int(os.getenv("SMTP_PORT") or 587),
+            os.environ["SMTP_USER"], os.environ["SMTP_PASSWORD"],
+        )
+    except RuntimeError as exc:
+        sys.exit(str(exc))
+    log("Approval email sent.")
 
 
 def cmd_generate(args: argparse.Namespace) -> None:
     cfg = load_config()
-    theme = pick_theme(cfg)
+    mode = (os.getenv("MODE") or "new").strip().lower()
+    if mode not in ("new", "captions", "image", "all"):
+        sys.exit(f"Unknown MODE '{mode}' (use new, captions, image or all)")
+    regens_used = int(os.getenv("REGENS_USED") or 0)
     OUT.mkdir(exist_ok=True)
-    log(f"Theme this week: {theme['id']} ({theme['topic']})")
-    candidates = build_candidates(cfg, theme, args.dry_run)
-    if not candidates:
-        sys.exit("No caption passed the compliance check.")
+
+    prev = None
+    prev_dir = ROOT / "previous"
+    if mode == "new":
+        theme = pick_theme(cfg)
+    else:
+        prev_id = os.getenv("PREV_RUN_ID") or sys.exit("This MODE needs PREV_RUN_ID (run ID of the draft being redone).")
+        prev = fetch_draft(prev_id, prev_dir)
+        theme = next((t for t in cfg["themes"] if t["id"] == prev["theme"]), None)
+        if theme is None:
+            sys.exit(f"Theme '{prev['theme']}' is no longer in themes.json")
+    log(f"Mode '{mode}', theme: {theme['id']} ({theme['topic']})")
+
+    if mode in ("new", "captions", "all"):
+        avoid = [c["caption"] for c in prev["candidates"]] if prev else None
+        candidates = build_candidates(cfg, theme, args.dry_run, avoid)
+        if not candidates:
+            sys.exit("No caption passed the compliance check.")
+    else:  # image only: keep the captions the approver already saw
+        candidates = prev["candidates"]
     log("Caption options: " + ", ".join(f"{c['number']}={c['label']}" for c in candidates))
-    prompt = generate_image(cfg, theme, OUT / "image.jpg", args.dry_run)
-    default = default_candidate(candidates)
+
+    image_path = OUT / "image.jpg"
+    if mode == "captions":  # keep the existing image
+        shutil.copyfile(prev_dir / "image.jpg", image_path)
+        prompt = prev.get("image_prompt", "")
+    else:
+        prompt = generate_image(cfg, theme, image_path, args.dry_run, variation=(mode != "new"))
+
     draft = {
+        "week": prev["week"] if prev else iso_week(),
         "theme": theme["id"],
-        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "topic": theme["topic"],
+        "mode": mode,
+        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "expires_at": int(time.time()) + DRAFT_DAYS * 86400,
+        "regens_used": regens_used,
+        "dry_run": bool(args.dry_run),
         "image_prompt": prompt,
         "candidates": candidates,
-        "caption": default["caption"],  # the default choice, kept for simple tools
-        "alt_text": default["alt_text"],
     }
     (OUT / "draft.json").write_text(json.dumps(draft, indent=2, ensure_ascii=False), encoding="utf-8")
-    (OUT / "draft.md").write_text(draft_markdown(theme, candidates), encoding="utf-8")
-    log("Draft written to out/ (draft.json, draft.md, image.jpg)")
+    (OUT / "draft.md").write_text(draft_markdown(draft), encoding="utf-8")
+    log("Draft written to out/")
+    send_approval_email(draft, image_path.read_bytes(), args.dry_run)
 
 
 # ---------------------------------------------------------------- hosting
@@ -462,16 +512,26 @@ def publish_to_instagram(image_url: str, caption: str, alt_text: str) -> str:
 
 
 def cmd_publish(args: argparse.Namespace) -> None:
-    draft = json.loads((OUT / "draft.json").read_text(encoding="utf-8"))
-    image = OUT / "image.jpg"
-    chosen = choose_candidate(draft)
-    if args.dry_run:
-        log("DRY RUN: would host image and publish this caption:")
+    run_id = os.getenv("DRAFT_RUN_ID")
+    if run_id:
+        draft = fetch_draft(run_id, OUT)
+    else:  # local use: a draft already in out/
+        draft = json.loads((OUT / "draft.json").read_text(encoding="utf-8"))
+    if int(draft["expires_at"]) < time.time():
+        sys.exit("This draft has expired, so nothing was posted. Wait for the next weekly draft.")
+    number = (os.getenv("CHOSEN_OPTION") or "").strip()
+    chosen = next((c for c in draft["candidates"] if str(c["number"]) == number), None)
+    if chosen is None:
+        sys.exit(f"Option '{number}' is not in this draft (available: {[c['number'] for c in draft['candidates']]}).")
+    log(f"Approved option {chosen['number']} ({chosen['label']})")
+    # A test draft (placeholder image) must never reach Instagram, whatever flags were passed.
+    if args.dry_run or draft.get("dry_run"):
+        log("DRY RUN: would host the image and publish this caption:")
         print("-" * 60 + f"\n{chosen['caption']}\n" + "-" * 60)
         return
     if not os.getenv("IG_ACCESS_TOKEN"):
         sys.exit("IG_ACCESS_TOKEN is not set")
-    url = host_image(image)
+    url = host_image(OUT / "image.jpg")
     log(f"Image hosted at {url}")
     media_id = publish_to_instagram(url, chosen["caption"], chosen["alt_text"])
     log(f"Published to Instagram. Media id: {media_id}")
@@ -506,7 +566,7 @@ def cmd_refresh(args: argparse.Namespace) -> None:
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("stage", choices=["generate", "publish", "refresh"])
-    p.add_argument("--dry-run", action="store_true", help="No paid API calls and no real post")
+    p.add_argument("--dry-run", action="store_true", help="No paid API calls (generate) or no real post (publish)")
     p.add_argument("--out", help="refresh only: file to write the new token to")
     args = p.parse_args()
     {"generate": cmd_generate, "publish": cmd_publish, "refresh": cmd_refresh}[args.stage](args)
