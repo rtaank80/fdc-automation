@@ -1,21 +1,25 @@
 # FDC weekly Instagram automation
 
-Every week this posts an AI-generated cosmetic dentistry / whitening image to **@fdc.dental**, with a caption written in the practice's tone and a link to the website, to drive visits and enquiries.
+Every week this prepares a post for **@fdc.dental**: an AI-generated cosmetic dentistry / whitening image and up to three caption options, with a link to the website. The approver gets an email, picks a caption with one button, and only then does it post.
 
 ```
-GitHub Actions cron (Tue 09:00 UTC)
-  -> generate: pick theme -> write caption (Claude) -> create image (OpenAI) -> draft saved
-  -> refresh the Instagram token (keeps it valid)
-  -> approval gate (optional, recommended): you tap "Approve" on GitHub
-  -> publish: host image -> Instagram Graph API -> live post
+GitHub Actions cron (Tuesday 09:00 UTC)  "Weekly Instagram draft"
+  -> pick theme -> up to 3 captions (1 template, 2 Claude, 3 Cloudflare) + an image
+  -> email to the approver: the image, each caption with its own Approve button, and
+     "new captions", "new image", "new everything" and "skip" buttons
+  -> a button opens a confirmation page (Cloudflare Worker); pressing Confirm acts:
+        Approve  -> "Publish approved post" workflow -> Instagram
+        New ...  -> a fresh draft email (3 per week at most)
+        Skip     -> nothing is posted
+  -> no click at all = nothing is posted; links expire after 5 days; the next draft comes next Tuesday
 ```
 
-Cost is roughly a few pence per post for the image and caption. GitHub Actions is free at this volume.
+Cost is a few pence a week at most. GitHub Actions and the Cloudflare Worker are free at this volume.
 
 ## One-off setup
 
 ### 1. Put the project on GitHub
-Create a repo, push this folder to it. Use a **public** repo if you want the free approval gate (private repos need a paid GitHub plan for required reviewers). Secrets stay private either way.
+Create a **public** repo and upload this folder's contents (public is needed so Instagram can fetch the post image and for the free privacy page; secrets stay private). Check the hidden `.github/workflows/` folder uploaded: the Actions tab should list *Weekly Instagram draft* and *Publish approved post*. Under Settings > Actions > General > Workflow permissions choose **Read and write permissions**.
 
 ### 2. Get your Instagram token (no Facebook Page needed)
 Uses Meta's **Instagram API with Instagram Login**. Follow these in order:
@@ -25,60 +29,103 @@ Uses Meta's **Instagram API with Instagram Login**. Follow these in order:
 4. **Add Instagram:** in the app dashboard add the **Instagram** product, then open **Instagram > API setup with Instagram business login**.
 5. **Connect the account:** on that page, add @fdc.dental if it is not listed (it will ask you to sign in to Instagram). If Meta says the account needs a role, add it under App roles as an Instagram tester and accept the invite in the Instagram app (Settings > Website permissions > Apps and websites > Tester invites).
 6. **Generate token:** click **Generate token** next to @fdc.dental, sign in to Instagram, approve the permissions (`instagram_business_basic` and `instagram_business_content_publish`) and copy the token. Tokens made this way are already long-lived (60 days), so no exchange step is needed.
-7. **Verify it:** run `curl "https://graph.instagram.com/v25.0/me?fields=user_id,username&access_token=YOUR_TOKEN"`. It should return `@fdc.dental`'s username. If the username is wrong, the token belongs to the wrong account.
+7. **Verify it:** open `https://graph.instagram.com/v25.0/me?fields=user_id,username&access_token=YOUR_TOKEN`. It should return `@fdc.dental`'s username. If the username is wrong, the token belongs to the wrong account.
 8. Posting to your own account works with Standard Access, so you can leave the app in development mode and skip App Review.
 
 ### Privacy policy page (required by Meta)
-Meta asks for a public Privacy Policy URL (and a Data Deletion URL) before an app can go live. `docs/privacy.html` is a ready-made policy for this app.
+Meta asks for a public Privacy Policy URL (and a Data Deletion URL) before an app can go live. `docs/privacy.html` is a ready-made policy for this app, covering the approval email and Worker.
 1. In your GitHub repo go to Settings > Pages, set Source to *Deploy from a branch*, branch `main`, folder `/docs`, and save.
-2. After a minute the page is at `https://YOUR-USERNAME.github.io/YOUR-REPO/privacy.html` (GitHub Pages on a private repo needs a paid plan; use a public repo, which is safe because secrets are never in the code).
+2. After a minute the page is at `https://YOUR-USERNAME.github.io/YOUR-REPO/privacy.html`.
 3. In the Meta app dashboard go to App settings > Basic and paste that URL into **Privacy Policy URL**. For **User data deletion** choose *Data deletion instructions URL* and paste the same URL followed by `#data-deletion`.
-4. Check the contact details and wording in the file are right for the practice before publishing.
+4. Check the contact details and wording are right for the practice before publishing.
 
-### 3. Other keys
-- **Cloudflare Workers AI** for image generation (FLUX.2 klein 9B, free tier covers one image a week):
+### 3. Image and caption keys
+- **Cloudflare Workers AI** (image: FLUX.2 klein 9B; caption option 3: Llama 3.3 70B). Both fit in the free daily allowance at one post a week.
   1. Sign up free at dash.cloudflare.com.
   2. Open **AI > Workers AI**, choose **Use REST API**, and copy your **Account ID**.
-  3. Click **Create a Workers AI API Token**, accept the prefilled settings (needs "Workers AI - Read" and "Edit"), create it and copy the token.
-  4. Add GitHub secrets `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`.
-  5. Check Black Forest Labs' terms (bfl.ai/legal/terms-of-service) allow commercial use for your case.
-  To use OpenAI instead, add the repo variable `IMAGE_PROVIDER=openai` and the secret `OPENAI_API_KEY`.
-- **Anthropic API key** for captions (optional; without it a safe template caption is used).
-- **Image hosting:** nothing to set up. Instagram needs a public image URL, so the workflow saves each image into the `images/` folder of this repo (which must be **public**) using GitHub's built-in token. To use imgbb instead, set the repo variable `IMAGE_HOST=imgbb` and add the secret `IMGBB_API_KEY`.
+  3. Click **Create a Workers AI API Token**, accept the prefilled settings, create it and copy the token.
+  4. Check Black Forest Labs' terms (bfl.ai/legal/terms-of-service) allow commercial use for your case.
+  To use OpenAI for images instead, set the repo variable `IMAGE_PROVIDER=openai` and add the secret `OPENAI_API_KEY`.
+- **Anthropic API key** (optional): adds caption option 2 (Claude). Without it the email offers options 1 and 3.
+- **Image hosting:** nothing to set up. Each approved image is saved into the repo's `images/` folder. To use imgbb instead, set the variable `IMAGE_HOST=imgbb` and add the secret `IMGBB_API_KEY`.
 
-### 4. Add them to GitHub
-Settings > Secrets and variables > Actions > New repository secret:
-`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `ANTHROPIC_API_KEY`, `IG_ACCESS_TOKEN`, `GH_PAT`.
+### 4. A GitHub token so the Worker can start workflows
+1. GitHub > your profile picture > Settings > Developer settings > Personal access tokens > **Fine-grained tokens** > Generate new token.
+2. Name: `FDC approvals Worker`. Expiration: the longest offered (put a renewal reminder in your calendar). Repository access: **Only select repositories** > this repo.
+3. Under Repository permissions set **Actions: Read and write** and nothing else. Generate and copy it (shown once). This goes into Cloudflare in step 6, **not** into GitHub.
 
-**Keeping the token alive:** Instagram tokens last 60 days. The workflow refreshes the token every week and saves the new one back into the `IG_ACCESS_TOKEN` secret, so it never expires as long as the automation keeps running. For this it needs one more secret, `GH_PAT`: create a fine-grained personal access token (GitHub > Settings > Developer settings) limited to this repository with **Secrets: Read and write** permission. Without it the posts still work, but you must replace the token by hand before day 60, and the run will show a warning.
+### 5. Add secrets and variables in GitHub
+Repo > Settings > Secrets and variables > Actions.
 
-### 5. Turn on approval (recommended)
-Settings > Environments > New environment named **`instagram-approval`** > tick *Required reviewers* and add yourself. Each week you get an email; open the run, read the draft in the summary, click **Approve**. Leave it without reviewers and it posts fully automatically.
+**Secrets** (New repository secret):
+| Name | Value |
+|---|---|
+| `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | from step 3 |
+| `ANTHROPIC_API_KEY` | optional |
+| `IG_ACCESS_TOKEN` | from step 2 |
+| `GH_PAT` | a fine-grained token with **Secrets: Read and write** on this repo; lets the weekly job save the refreshed Instagram token (without it the token must be replaced by hand before day 60) |
+| `SMTP_USER` | the full sending mailbox address, e.g. `fdc-dental.instagram@family-dental-centre.co.uk` |
+| `SMTP_PASSWORD` | that mailbox's password |
+| `APPROVER_EMAIL` | who receives the weekly draft, e.g. `ritesh.taank@yahoo.com` |
+| `LINK_SECRET` | a long random string (a password manager, or `openssl rand -hex 32`). **Must be identical** to the Worker's `LINK_SECRET` |
 
-### Choosing between caption options
-Each week the draft offers up to three captions, and the reviewer picks one when approving:
-- **Option 1: Default template** (always available; fixed wording from `post_weekly.py`)
-- **Option 2: Claude** (only if the `ANTHROPIC_API_KEY` secret is set)
-- **Option 3: Cloudflare** (uses your Cloudflare keys; model `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, change it with the repo variable or env `CAPTION_CF_MODEL`)
+**Variables** (Variables tab):
+| Name | Value |
+|---|---|
+| `APPROVAL_BASE_URL` | the Worker's address from step 6, e.g. `https://fdc-approvals.yourname.workers.dev` |
+| `SMTP_HOST` | optional, defaults to `smtp.livemail.co.uk` |
+| `SMTP_PORT` | optional, defaults to `587` (STARTTLS); use `465` if UK2 says SSL |
 
-An option is left out if its service fails or its caption contains banned wording. To choose: open the run on the Actions tab, read the options in the run summary, click **Review deployments**, type `1`, `2`, `3` (or `claude`, `cloudflare`, `template`) in the comment box and click **Approve**. With no comment, the default is Claude, then Cloudflare, then the template. This needs the `instagram-approval` environment with a required reviewer (step 5 above); without one, the default caption is posted automatically.
+### 6. Create the approval Worker in Cloudflare
+(Screen labels change from time to time; these are the usual names.)
+1. dash.cloudflare.com > **Workers & Pages** > **Create** > start from the *Hello World* template, name it `fdc-approvals`, **Deploy**.
+2. Click **Edit code**, delete the sample, paste in the whole of `worker/worker.js` from this project, and **Deploy**.
+3. Create the memory it uses: **Storage & databases > KV > Create** a namespace named `fdc-approvals-state`.
+4. Back in the Worker: **Settings > Bindings > Add > KV namespace**. Variable name `STATE` (exactly), pick the namespace, save.
+5. **Settings > Variables and secrets > Add**:
+   - `GH_REPO` (type Text): `your-username/your-repo`
+   - `GH_TOKEN` (type Secret): the token from step 4
+   - `LINK_SECRET` (type Secret): the same value as in GitHub
+   - optional Text values: `GH_REF` (branch, default `main`), `MAX_REGENS` (default `3`)
+6. Under **Settings > Domains & Routes** make sure the `workers.dev` address is enabled, copy it, and put it in the GitHub variable `APPROVAL_BASE_URL`. Visiting that address should say "The approval service is running."
 
-### 6. Test
-Actions tab > *Weekly Instagram post* > **Run workflow** with *Dry run* ticked. Then run once with it unticked to make the first real post.
+### 7. Test (nothing real is posted)
+1. Actions > *Weekly Instagram draft* > **Run workflow** with *Dry run* ticked. A `[TEST]` email arrives at the approver address (check spam the first time; mark it "not spam").
+2. Click **Approve option 1**, then **Confirm**. The *Publish approved post* workflow starts and logs `DRY RUN`. Test drafts can never post, and their clicks are counted separately from the real week.
+3. When happy, run the first draft for real (*Dry run* unticked), approve a caption, and check @fdc.dental.
+4. After that it runs by itself every Tuesday. Disable it any time under Actions > the workflow > **...** > Disable workflow.
+
+## Using the email
+- **Approve option N and post**: opens a confirmation page; **Confirm** starts the post (usually live within a couple of minutes).
+- **Generate new captions / new image / both**: a fresh email follows in a few minutes. Three of these per week at most; the email shows how many are left.
+- **Skip this week**: nothing posts.
+- Each link works once, and only until its expiry shown in the email. Once a caption is approved or skipped, the rest of that week's links stop working.
+- **Fallback without the email:** Actions > *Publish approved post* > Run workflow. Enter the run ID of the draft run (the number at the end of its URL) and the option number.
 
 ## Customising
-- `themes.json`: brand tone, image style and the 12 rotating topics (about a quarter of the year per cycle). Edit freely, or force one with `THEME_ID`.
+- `themes.json`: brand tone, image style and the 12 rotating topics. Edit freely, or force one with `THEME_ID`.
 - Schedule: edit the `cron` line in `.github/workflows/weekly.yml` (times are UTC).
-- Local run: `pip install -r requirements.txt`, copy `.env.example` to `.env`, export the variables, then `python post_weekly.py generate --dry-run`.
+- The caption instructions and the default template are in `post_weekly.py` (`_prompts`, `fallback_caption`); banned wording is the `BANNED` list.
+- Local run: `pip install -r requirements.txt`, copy `.env.example` to `.env`, export the variables, then `python post_weekly.py generate --dry-run` (open `out/email-preview.html` to see the email).
 
 ## Compliance notes (UK dental advertising)
 - Images are deliberately illustrative, with no before/after pairs and no fake patient results; the caption states "Imagery is illustrative. Individual results vary." (matching your website).
-- Captions avoid guarantees, superlatives, prices and discounts; the script rejects any caption containing risky wording and falls back to a template.
-- Check the GDC advertising guidance and ASA/CAP rules, and have a clinician at the practice skim the first few drafts via the approval step.
+- Captions avoid guarantees, superlatives, prices and discounts; any AI caption containing risky wording is dropped. The approver should still read each caption.
+- Check the GDC advertising guidance and ASA/CAP rules, and have a clinician at the practice skim the first few drafts.
 - Instagram captions can't hold clickable links; the caption points to "link in bio", so set your bio link to the website.
 
+## Security notes
+- An email button is a link: anyone who can open the email could use it until it expires or is used. Send it only to a mailbox you control, and don't forward it.
+- Links are signed (tampering is rejected), expire after 5 days and work once. Opening a link only shows a page; the Confirm press is what acts, so mail scanners can't approve anything.
+- The repo is public, so the draft files kept as workflow artifacts (7 days) can be downloaded by any signed-in GitHub user while they exist, and approved images stay in `images/`. Nothing in them is sensitive beyond unapproved marketing text and images.
+- Keep the Worker's GitHub token limited to **Actions: Read and write** on this repo only.
+
 ## Troubleshooting
-- *Error 9007 / media not ready*: the script polls for it; re-run if the image host was slow.
-- *"Only photo or video can be accepted"*: the image URL must be public JPEG; check `IMAGE_HOST` and its key.
-- *Token errors*: check the token was generated with the `instagram_business_content_publish` permission and that your account is added as an Instagram tester on the app.
-- *"Token refresh failed" warning on the first run*: a token must be at least 24 hours old before it can be refreshed. It resolves itself the next week.
+- *No email:* check the draft run's log for the SMTP message. "Login rejected": use the full address in `SMTP_USER` and check the password. Connection errors: try `SMTP_PORT=465`.
+- *"Link is invalid or has expired":* it expired, or `LINK_SECRET` differs between GitHub and the Worker (they must match exactly).
+- *"GitHub did not accept the request":* check the Worker's `GH_REPO` spelling, that `GH_TOKEN` has **Actions: Read and write** on that repo, and that both workflow files are on the `main` branch.
+- *Approved but nothing posted:* open the *Publish approved post* run and read its log. "No unexpired draft artifact" means the draft is over 7 days old.
+- *Error 9007 / media not ready:* the script polls for it; re-run if the image host was slow.
+- *"Only photo or video can be accepted":* the image URL must be a public JPEG; check the repo is public.
+- *Token errors:* check the token has the `instagram_business_content_publish` permission and the account is an Instagram tester on the app.
+- *"Token refresh failed" warning on the first run:* a token must be at least 24 hours old before it can be refreshed. It resolves itself the next week.
