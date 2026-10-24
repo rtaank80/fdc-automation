@@ -1,4 +1,8 @@
-name: Weekly Instagram post
+name: Weekly Instagram draft
+
+# Every Tuesday this makes a draft (up to 3 captions + an image) and emails it to the approver.
+# Nothing is posted until the approver clicks Approve in that email; that starts publish.yml.
+# The same workflow is started by the approval Worker when the approver asks for new captions/image.
 
 on:
   schedule:
@@ -6,16 +10,33 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Dry run (no paid API calls, nothing posted)"
+        description: "Dry run (placeholder image, no AI calls; the email is marked TEST and cannot post)"
         type: boolean
         default: true
+      mode:
+        description: "new = fresh draft. The others redo part of an earlier draft (used by the email buttons)"
+        type: choice
+        options: [new, captions, image, all]
+        default: new
+      prev_run_id:
+        description: "Run ID of the draft being redone (only for captions/image/all)"
+        required: false
+        default: ""
+      regens_used:
+        description: "Regenerations already used this week"
+        required: false
+        default: "0"
       theme_id:
         description: "Force a theme id from themes.json (optional)"
         required: false
+      refresh_token:
+        description: "Also refresh the Instagram token now"
+        type: boolean
+        default: false
 
 permissions:
-  contents: write   # saves the post image into the repo (IMAGE_HOST=github)
-  actions: read     # lets the publish step read your caption choice from the approval comment
+  contents: write   # lets the draft stage read the repo; publish.yml uses write to save the post image
+  actions: read     # lets a regeneration download the earlier draft
 
 jobs:
   generate:
@@ -27,7 +48,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
-      - name: Generate draft (caption + image)
+      - name: Make the draft and email the approver
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           IMAGE_PROVIDER: ${{ vars.IMAGE_PROVIDER || 'cloudflare' }}
@@ -35,18 +56,36 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           THEME_ID: ${{ inputs.theme_id }}
-        run: python post_weekly.py generate ${{ inputs.dry_run && '--dry-run' || '' }}
-      - name: Show draft in the run summary
-        run: cat out/draft.md >> "$GITHUB_STEP_SUMMARY"
+          MODE: ${{ inputs.mode || 'new' }}
+          PREV_RUN_ID: ${{ inputs.prev_run_id }}
+          REGENS_USED: ${{ inputs.regens_used || '0' }}
+          DRY: ${{ inputs.dry_run && '1' || '' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRAFT_RUN_ID: ${{ github.run_id }}
+          # Approval email (see README)
+          SMTP_HOST: ${{ vars.SMTP_HOST || 'smtp.livemail.co.uk' }}
+          SMTP_PORT: ${{ vars.SMTP_PORT || '587' }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          APPROVER_EMAIL: ${{ secrets.APPROVER_EMAIL }}
+          APPROVAL_BASE_URL: ${{ vars.APPROVAL_BASE_URL }}
+          LINK_SECRET: ${{ secrets.LINK_SECRET }}
+        run: python post_weekly.py generate ${DRY:+--dry-run}
+      # The draft is saved BEFORE any approval link can be used, because publishing reads it back.
       - uses: actions/upload-artifact@v6
         with:
           name: draft
-          path: out/
+          path: |
+            out/draft.json
+            out/draft.md
+            out/image.jpg
+          retention-days: 7
 
   refresh-token:
     # Instagram tokens last 60 days; refreshing weekly keeps it alive forever.
     # Needs a GitHub personal access token (secret GH_PAT) that can write repo secrets.
-    if: ${{ !inputs.dry_run }}
+    if: ${{ github.event_name == 'schedule' || inputs.refresh_token }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -71,29 +110,3 @@ jobs:
             fi
           fi
           rm -f new_token.txt
-
-  publish:
-    needs: [generate, refresh-token]
-    if: ${{ always() && needs.generate.result == 'success' && (needs.refresh-token.result == 'success' || needs.refresh-token.result == 'skipped') }}
-    runs-on: ubuntu-latest
-    # Add "Required reviewers" to this environment (Settings > Environments) to approve each post.
-    # With no reviewers configured, it posts automatically.
-    environment: instagram-approval
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-          cache: pip
-      - run: pip install -r requirements.txt
-      - uses: actions/download-artifact@v7
-        with:
-          name: draft
-          path: out/
-      - name: Publish to Instagram
-        env:
-          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
-          IMGBB_API_KEY: ${{ secrets.IMGBB_API_KEY }}
-          IMAGE_HOST: ${{ vars.IMAGE_HOST || 'github' }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python post_weekly.py publish ${{ inputs.dry_run && '--dry-run' || '' }}

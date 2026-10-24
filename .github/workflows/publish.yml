@@ -1,0 +1,48 @@
+name: Publish approved post
+
+# Started by the approval Worker when the approver clicks Approve in the email.
+# You can also start it by hand (Actions tab > Run workflow) as a fallback: give the run ID of the
+# "Weekly Instagram draft" run that made the draft, and the option number to post.
+
+on:
+  workflow_dispatch:
+    inputs:
+      draft_run_id:
+        description: "Run ID of the 'Weekly Instagram draft' run that made the draft"
+        required: true
+      option:
+        description: "Caption option number to post (1 = template, 2 = Claude, 3 = Cloudflare)"
+        required: true
+      dry_run:
+        description: "Dry run (shows what would be posted, posts nothing)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # saves the post image into the repo (IMAGE_HOST=github)
+  actions: read     # downloads the draft
+
+concurrency:
+  group: instagram-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Publish to Instagram
+        env:
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IMGBB_API_KEY: ${{ secrets.IMGBB_API_KEY }}
+          IMAGE_HOST: ${{ vars.IMAGE_HOST || 'github' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRAFT_RUN_ID: ${{ inputs.draft_run_id }}
+          CHOSEN_OPTION: ${{ inputs.option }}
+          DRY: ${{ inputs.dry_run && '1' || '' }}
+        run: python post_weekly.py publish ${DRY:+--dry-run}
