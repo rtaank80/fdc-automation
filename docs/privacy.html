@@ -23,7 +23,7 @@
 <body>
 <main>
 <h1>Privacy Policy</h1>
-<p class="meta">FDC Instagram Poster &middot; Last updated: 20 October 2026</p>
+<p class="meta">FDC Instagram Poster &middot; Last updated: 23 October 2026</p>
 
 <h2>1. Who we are</h2>
 <p>This policy covers the "FDC Instagram Poster" app (the "App"), operated by <strong>FDC Cosmetics &amp; Whitening, part of Family Dental Centre</strong>, 404 Kingstanding Road, Birmingham, B44 8LD, United Kingdom ("we", "us").</p>
@@ -38,6 +38,7 @@
   <li><strong>Instagram account access token</strong> for @fdc.dental, which lets the App publish on our behalf.</li>
   <li><strong>Basic account details</strong> of our own account (such as the username and account ID), used to confirm the App is connected to the correct account.</li>
   <li><strong>Post content</strong> we create: the generated image, caption, hashtags and alt text.</li>
+  <li><strong>Approver email address:</strong> the work email address of the one team member who approves posts, used only to send them the weekly draft for approval.</li>
 </ul>
 <p>The App <strong>does not</strong> collect, read or store personal information about our patients, followers, visitors or any other Instagram users. It does not access followers' profiles, comments, direct messages or insights. It does not use patient images, records or any health information.</p>
 
@@ -49,21 +50,21 @@
 <table>
   <tr><th>Provider</th><th>Purpose</th><th>What is sent</th></tr>
   <tr><td>Meta (Instagram)</td><td>Publishing our post</td><td>Image, caption, alt text, access token</td></tr>
-  <tr><td>OpenAI</td><td>Generating the illustrative image</td><td>A text description of the image</td></tr>
-  <tr><td>Anthropic</td><td>Drafting the caption</td><td>The post topic and our brand guidelines</td></tr>
-  <tr><td>imgbb</td><td>Temporary public hosting of the image, which Instagram requires in order to fetch it</td><td>The generated image (which is published on Instagram anyway)</td></tr>
-  <tr><td>GitHub</td><td>Running the weekly schedule and storing the access token as an encrypted secret</td><td>Drafts and the access token</td></tr>
+  <tr><td>Cloudflare</td><td>Generating the illustrative image and a draft caption (Workers AI), and running the small service that receives the approver's button clicks</td><td>A text description of the image, the post topic and our brand guidelines; a signed approval link when a button is clicked</td></tr>
+  <tr><td>Anthropic (optional)</td><td>Drafting a caption</td><td>The post topic and our brand guidelines</td></tr>
+  <tr><td>UK2 (our email provider)</td><td>Sending the weekly approval email to the approver</td><td>The draft image and captions, and the approver's email address</td></tr>
+  <tr><td>GitHub</td><td>Running the weekly schedule, keeping drafts temporarily, storing the approved post image so Instagram can fetch it, and storing access keys as encrypted secrets</td><td>Drafts, the approved image and the access token</td></tr>
 </table>
 
 <h2>6. Storage and retention</h2>
 <ul>
   <li>The access token is stored as an encrypted secret and is kept until we revoke it or remove the App.</li>
-  <li>Draft posts are kept as workflow records on GitHub for a limited period (up to 90 days by default) and then deleted.</li>
+  <li>Draft posts are kept as workflow records on GitHub for 7 days and then deleted. Approval links expire after 5 days, and the Cloudflare service keeps only a short record that a link has been used (no post content), for up to 14 days.</li>
   <li>Published posts remain on our Instagram account until we delete them.</li>
 </ul>
 
 <h2>7. Security</h2>
-<p>Access to the App and its credentials is restricted to authorised members of our team. Credentials are never written into the source code, and each post can be reviewed and approved by a member of staff before it is published.</p>
+<p>Access to the App and its credentials is restricted to authorised members of our team. Credentials are never written into the source code, and nothing is posted until a member of staff approves a specific caption from the weekly approval email.</p>
 
 <h2>8. Your rights</h2>
 <p>Because the App does not collect personal information about patients, followers or other individuals, there is generally no such data for us to access, correct or delete. If you believe we hold personal information about you in connection with the App, you have rights under the UK GDPR and the Data Protection Act 2018, including access, correction and erasure. Contact us using the details above and we will respond within one month. You can also complain to the Information Commissioner's Office at <a href="https://ico.org.uk">ico.org.uk</a>.</p>
