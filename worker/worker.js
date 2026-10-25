@@ -8,14 +8,16 @@
 //   token = base64url(JSON payload) + "." + base64url(HMAC-SHA256(LINK_SECRET, base64url(JSON payload)))
 //   payload: a=action, d=draft run id, c=option number, l=option label, w=ISO week, e=expiry (epoch s),
 //            t=post topic, x=1 for a test (dry run) draft
+//   w is the draft chain id: one scheduled run plus any regenerations of it. There is no weekly limit;
+//   how often posts happen is controlled by the schedule in weekly.yml.
 //
 // Settings (Worker > Settings > Variables and secrets, Bindings):
 //   LINK_SECRET  (secret)  same value as the LINK_SECRET secret in GitHub
 //   GH_TOKEN     (secret)  fine-grained GitHub token for this repo only, permission "Actions: Read and write"
 //   GH_REPO      (text)    owner/repo, e.g. rtinnovations/fdc-instagram
 //   GH_REF       (text, optional) branch holding the workflows, default "main"
-//   MAX_REGENS   (text, optional) regenerations allowed per week, default 3
-//   STATE        (KV namespace binding) remembers used links, the weekly decision and regeneration count
+//   MAX_REGENS   (text, optional) regenerations allowed per draft, default 3
+//   STATE        (KV namespace binding) remembers used links, each draft's decision and its regeneration count
 
 const DAY = 86400;
 
@@ -24,7 +26,7 @@ const ACTIONS = {
   captions: { label: "Generate new captions (keeping the image)", mode: "captions" },
   image: { label: "Generate a new image (keeping the captions)", mode: "image" },
   all: { label: "Generate a new image and new captions", mode: "all" },
-  skip: { label: "Skip this week (post nothing)" },
+  skip: { label: "Skip this draft (post nothing)" },
 };
 
 export default {
@@ -38,7 +40,7 @@ export default {
 
     const p = await verify(token, env.LINK_SECRET);
     if (!p || !ACTIONS[p.a]) {
-      return page("Link not valid", "This link is invalid or has expired. If this week's post is still undecided, use the buttons in the newest email, or wait for next week's draft.", 400);
+      return page("Link not valid", "This link is invalid or has expired. If this draft is still undecided, use the buttons in the newest email, or wait for the next scheduled draft.", 400);
     }
 
     if (kind === "a") {
@@ -52,25 +54,27 @@ export default {
 
 async function doAction(p, token, env) {
   const kv = env.STATE;
-  const week = String(p.w);
+  const chain = String(p.w);
   const usedKey = await tokenKey(token);
   const test = p.x === 1;
-  // Test (dry run) drafts keep their own state, so trying the buttons never blocks the real weekly post.
+  // Test (dry run) drafts keep their own state, separate from real drafts.
   const scope = test ? "test" : "live";
-  const decidedKey = `decided:${week}:${scope}`;
-  const regenKey = `regen:${week}:${scope}`;
+  const decidedKey = `decided:${chain}:${scope}`;
+  const regenKey = `regen:${chain}:${scope}`;
   const maxRegens = parseInt(env.MAX_REGENS || "3", 10);
   const ttl = { expirationTtl: 14 * DAY };
 
   if (await kv.get(usedKey)) return page("Already done", "This link has already been used.", 200);
-  const decided = await kv.get(decidedKey);
-  if (decided) return page("Already decided", `This week's post has already been decided (${decided}). Nothing more will happen.`, 200);
+  // A real draft (with its regenerations) can be approved or skipped once, so two Approve buttons in one email
+  // cannot post twice. There is no limit per week. Test drafts have no lock and can be clicked repeatedly.
+  const decided = test ? null : await kv.get(decidedKey);
+  if (decided) return page("Already decided", `This draft has already been decided (${decided}). Nothing more will happen.`, 200);
 
   try {
     if (p.a === "skip") {
-      await kv.put(decidedKey, "skipped", ttl);
+      if (!test) await kv.put(decidedKey, "skipped", ttl);
       await kv.put(usedKey, "1", ttl);
-      return page("Skipped", "Nothing will be posted this week. The next draft arrives with the next scheduled run.", 200);
+      return page("Skipped", "Nothing will be posted for this draft. The next draft arrives with the next scheduled run.", 200);
     }
 
     if (p.a === "approve") {
@@ -79,7 +83,7 @@ async function doAction(p, token, env) {
         option: String(p.c),
         dry_run: test ? "true" : "false",
       });
-      await kv.put(decidedKey, `option ${p.c} approved`, ttl);
+      if (!test) await kv.put(decidedKey, `option ${p.c} approved`, ttl);
       await kv.put(usedKey, "1", ttl);
       return page(
         test ? "Test approved" : "Approved",
@@ -92,8 +96,8 @@ async function doAction(p, token, env) {
 
     // Regeneration: captions, image or all
     const used = parseInt((await kv.get(regenKey)) || "0", 10);
-    if (used >= maxRegens) {
-      return page("Limit reached", `You have already used all ${maxRegens} regenerations for this week. Approve one of the options you have, or skip this week.`, 200);
+    if (!test && used >= maxRegens) {
+      return page("Limit reached", `You have already used all ${maxRegens} regenerations for this draft. Approve one of the options you have, or skip it.`, 200);
     }
     await dispatch(env, "weekly.yml", {
       mode: ACTIONS[p.a].mode,
@@ -104,7 +108,7 @@ async function doAction(p, token, env) {
     await kv.put(regenKey, String(used + 1), ttl);
     await kv.put(usedKey, "1", ttl);
     const left = maxRegens - (used + 1);
-    return page("On its way", `A new draft is being made and will arrive by email in a few minutes. Regenerations left this week: ${left} of ${maxRegens}.`, 200);
+    return page("On its way", `A new draft is being made and will arrive by email in a few minutes. Regenerations left for this draft: ${left} of ${maxRegens}.`, 200);
   } catch (err) {
     // Nothing is marked as used, so the button can be tried again.
     return page("Something went wrong", `GitHub did not accept the request (${esc(String(err.message).slice(0, 160))}). You can try the button again in a minute.`, 502);
