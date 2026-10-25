@@ -23,7 +23,7 @@ on:
         required: false
         default: ""
       regens_used:
-        description: "Regenerations already used this week"
+        description: "Regenerations already used for this draft"
         required: false
         default: "0"
       theme_id:
