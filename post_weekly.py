@@ -283,12 +283,29 @@ def _cloudflare_image(prompt: str) -> bytes:
     token = os.getenv("CLOUDFLARE_API_TOKEN") or sys.exit("CLOUDFLARE_API_TOKEN is not set.")
     model = os.getenv("IMAGE_MODEL", "@cf/black-forest-labs/flux-2-klein-9b")
     fields = {"prompt": prompt, "width": "1024", "height": "1024"}
-    r = requests.post(
-        f"https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/{model}",
-        headers={"Authorization": f"Bearer {token}"},
-        files={k: (None, v) for k, v in fields.items()},  # forces multipart/form-data
-        timeout=240,
-    )
+    # Cloudflare sometimes answers with a temporary 5xx (error 3043 "Internal server error") or 429.
+    # Retrying after a pause normally works, so try up to 5 times before giving up.
+    waits = [15, 30, 60, 120]
+    for attempt in range(len(waits) + 1):
+        try:
+            r = requests.post(
+                f"https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/{model}",
+                headers={"Authorization": f"Bearer {token}"},
+                files={k: (None, v) for k, v in fields.items()},  # forces multipart/form-data
+                timeout=240,
+            )
+        except (requests.Timeout, requests.ConnectionError) as e:
+            r = None
+            err = str(e)[:200]
+        else:
+            err = f"{r.status_code} {r.text[:200]}"
+        temporary = r is None or r.status_code >= 500 or r.status_code == 429
+        if not temporary or attempt == len(waits):
+            break
+        print(f"Cloudflare image attempt {attempt + 1} failed ({err}); retrying in {waits[attempt]}s", flush=True)
+        time.sleep(waits[attempt])
+    if r is None:
+        sys.exit(f"Cloudflare image generation failed: {err}")
     if r.status_code >= 400:
         sys.exit(f"Cloudflare image generation failed: {r.status_code} {r.text[:500]}")
     ctype = r.headers.get("content-type", "")
