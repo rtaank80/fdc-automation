@@ -302,10 +302,32 @@ def _cloudflare_image(prompt: str) -> bytes:
     return base64.b64decode(b64)
 
 
-def generate_image(cfg: dict, theme: dict, path: Path, dry_run: bool, variation: bool = False) -> str:
+def pick_person(cfg: dict, avoid: str | None = None) -> str | None:
+    """A random person description such as 'a woman in her 50s of Indian heritage'.
+
+    Image models drift towards one look unless told who to draw, so we choose explicitly each time.
+    """
+    pool = cfg.get("people")
+    if not pool:
+        return None
+    person = None
+    for _ in range(30):
+        gender = random.choice(pool["genders"])
+        pronoun = "her" if gender == "woman" else "his"
+        person = f"a {gender} in {pronoun} {random.choice(pool['ages'])} {random.choice(pool['backgrounds'])}"
+        if person != avoid:
+            break
+    return person
+
+
+def generate_image(
+    cfg: dict, theme: dict, path: Path, dry_run: bool, variation: bool = False, person: str | None = None
+) -> str:
+    scene = theme["image"].replace("{person}", person or "an adult")
     prompt = (
-        f"{theme['image']}. Topic: {theme['topic']}. Style: {cfg['image_style']} "
-        "Square composition, leave natural breathing room. Realistic, tasteful, not stock-photo cliché."
+        f"{scene}. Topic: {theme['topic']}. Style: {cfg['image_style']} "
+        "Square composition, leave natural breathing room. Realistic, tasteful, not stock-photo cliché. "
+        "Any person is an authentic, respectful, natural-looking adult, never a caricature."
     )
     if variation:  # a regenerated image should look different from the one it replaces
         prompt += " " + random.choice(VARIATIONS)
@@ -423,11 +445,16 @@ def cmd_generate(args: argparse.Namespace) -> None:
     log("Caption options: " + ", ".join(f"{c['number']}={c['label']}" for c in candidates))
 
     image_path = OUT / "image.jpg"
-    if mode == "captions":  # keep the existing image
+    person = None
+    if mode == "captions":  # keep the existing image (and so the same person)
         shutil.copyfile(prev_dir / "image.jpg", image_path)
         prompt = prev.get("image_prompt", "")
+        person = prev.get("person")
     else:
-        prompt = generate_image(cfg, theme, image_path, args.dry_run, variation=(mode != "new"))
+        if "{person}" in theme["image"]:
+            person = pick_person(cfg, avoid=prev.get("person") if prev else None)
+            log(f"Person in the image: {person}")
+        prompt = generate_image(cfg, theme, image_path, args.dry_run, variation=(mode != "new"), person=person)
 
     draft = {
         "week": prev["week"] if prev else iso_week(),
@@ -439,6 +466,7 @@ def cmd_generate(args: argparse.Namespace) -> None:
         "regens_used": regens_used,
         "dry_run": bool(args.dry_run),
         "image_prompt": prompt,
+        "person": person,
         "candidates": candidates,
     }
     (OUT / "draft.json").write_text(json.dumps(draft, indent=2, ensure_ascii=False), encoding="utf-8")

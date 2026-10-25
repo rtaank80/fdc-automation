@@ -9,11 +9,23 @@
     "base_hashtags": ["#FamilyDentalCentre", "#Birmingham", "#CosmeticDentistry"]
   },
   "image_style": "Soft natural daylight, clean modern premium editorial photography feel, warm neutral palette with fresh teal and white accents, shallow depth of field, calm and elegant. No text, no logos, no watermarks, no before/after split images, no exaggerated or unnaturally white teeth, no clinical or scary imagery.",
+  "people": {
+    "_note": "Themes whose image text contains {person} get a random person from these lists on every run (never the same person twice in a row on a regenerate). Edit freely; add or remove entries to change the mix.",
+    "genders": ["woman", "man"],
+    "ages": ["20s", "30s", "40s", "50s", "60s"],
+    "backgrounds": [
+      "of Black British heritage", "of Caribbean heritage", "of African heritage",
+      "of Indian heritage", "of Pakistani heritage", "of Bangladeshi heritage",
+      "of Chinese heritage", "of Southeast Asian heritage", "of Middle Eastern heritage",
+      "of white British heritage", "of Southern European heritage", "of Latin American heritage",
+      "of mixed heritage"
+    ]
+  },
   "themes": [
     {
       "id": "whitening-intro",
       "topic": "Professional dentist-led teeth whitening",
-      "image": "A relaxed adult with a natural, gentle smile in soft daylight, bright but realistic teeth, tasteful lifestyle portrait",
+      "image": "A portrait of {person}, relaxed, with a natural gentle smile in soft daylight, bright but realistic teeth, tasteful lifestyle photograph",
       "angle": "Why professional whitening is supervised by a dentist and tailored to you"
     },
     {
@@ -37,7 +49,7 @@
     {
       "id": "confidence",
       "topic": "Confidence and a natural smile",
-      "image": "A person laughing naturally outdoors in autumn light, candid and warm, teeth visible but natural",
+      "image": "A candid photograph of {person} laughing naturally outdoors in autumn light, warm, teeth visible but natural",
       "angle": "The most beautiful smile is one that feels like yours"
     },
     {
@@ -55,7 +67,7 @@
     {
       "id": "invisalign-faq",
       "topic": "Is Invisalign suitable for me? (FAQ)",
-      "image": "A person looking thoughtfully and happily out of a sunlit window, soft smile, editorial style",
+      "image": "A portrait of {person} looking thoughtfully and happily out of a sunlit window, soft smile, editorial style",
       "angle": "Crowding, gaps or relapse after braces: assess first, then explain options"
     },
     {
@@ -67,7 +79,7 @@
     {
       "id": "events-season",
       "topic": "Feeling ready for the festive season and special occasions",
-      "image": "Warm festive evening lights softly blurred in the background, a person smiling naturally, cosy and elegant",
+      "image": "Warm festive evening lights softly blurred in the background, a portrait of {person} smiling naturally, cosy and elegant",
       "angle": "Planning ahead for a smile you feel good about; book early for a consultation"
     },
     {
