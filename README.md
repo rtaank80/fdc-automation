@@ -104,6 +104,7 @@ Repo > Settings > Secrets and variables > Actions.
 
 ## Customising
 - `themes.json`: brand tone, image style and the 12 rotating topics. Edit freely, or force one with `THEME_ID`.
+- **Who appears in the images:** image models tend to favour one look, so for the themes that show a person (those with `{person}` in their `image` text) the script picks a random person each run, such as "a woman in her 50s of Indian heritage", and states it in the image prompt. The lists it draws from (`genders`, `ages`, `backgrounds`) are in the `people` section of `themes.json`; add, remove or repeat entries to change the mix (repeating an entry makes it more likely). A regenerated image never repeats the previous person, and "new captions" keeps the same image and person. The chosen person is saved in the draft and shown in the run log (`Person in the image: ...`). To make another theme show a person, put `{person}` in its `image` text, for example `"A portrait of {person} smiling naturally"`.
 - Schedule: edit the `cron` line in `.github/workflows/weekly.yml` (times are UTC).
 - The caption instructions and the default template are in `post_weekly.py` (`_prompts`, `fallback_caption`); banned wording is the `BANNED` list.
 - Local run: `pip install -r requirements.txt`, copy `.env.example` to `.env`, export the variables, then `python post_weekly.py generate --dry-run` (open `out/email-preview.html` to see the email).
@@ -125,6 +126,7 @@ Repo > Settings > Secrets and variables > Actions.
 - *"Link is invalid or has expired":* it expired, or `LINK_SECRET` differs between GitHub and the Worker (they must match exactly).
 - *"GitHub did not accept the request":* check the Worker's `GH_REPO` spelling, that `GH_TOKEN` has **Actions: Read and write** on that repo, and that both workflow files are on the `main` branch.
 - *Approved but nothing posted:* open the *Publish approved post* run and read its log. "No unexpired draft artifact" means the draft is over 7 days old.
+- *The people in the images still look too alike, or a group comes out stereotyped:* the model treats the description as guidance, not a guarantee. Check the `Person in the image` line in the run log against what you see, use **Generate a new image** in the email, and tell the maintainer which description misbehaved so the wording in `post_weekly.py` can be adjusted.
 - *Error 9007 / media not ready:* the script polls for it; re-run if the image host was slow.
 - *"Only photo or video can be accepted":* the image URL must be a public JPEG; check the repo is public.
 - *Token errors:* check the token has the `instagram_business_content_publish` permission and the account is an Instagram tester on the app.
