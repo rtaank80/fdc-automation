@@ -9,7 +9,7 @@ GitHub Actions cron (Tuesday 09:00 UTC)  "Weekly Instagram draft"
      "new captions", "new image", "new everything" and "skip" buttons
   -> a button opens a confirmation page (Cloudflare Worker); pressing Confirm acts:
         Approve  -> "Publish approved post" workflow -> Instagram
-        New ...  -> a fresh draft email (3 per week at most)
+        New ...  -> a fresh draft email (3 per draft at most)
         Skip     -> nothing is posted
   -> no click at all = nothing is posted; links expire after 5 days; the next draft comes next Tuesday
 ```
@@ -91,21 +91,21 @@ Repo > Settings > Secrets and variables > Actions.
 
 ### 7. Test (nothing real is posted)
 1. Actions > *Weekly Instagram draft* > **Run workflow** with *Dry run* ticked. A `[TEST]` email arrives at the approver address (check spam the first time; mark it "not spam").
-2. Click **Approve option 1**, then **Confirm**. The *Publish approved post* workflow starts and logs `DRY RUN`. Test drafts can never post, and their clicks are counted separately from the real week.
+2. Click **Approve option 1**, then **Confirm**. The *Publish approved post* workflow starts and logs `DRY RUN`. Test drafts can never post, have no limits (so you can click approve, skip and regenerate as often as you like) and don't affect real drafts.
 3. When happy, run the first draft for real (*Dry run* unticked), approve a caption, and check @fdc.dental.
 4. After that it runs by itself every Tuesday. Disable it any time under Actions > the workflow > **...** > Disable workflow.
 
 ## Using the email
 - **Approve option N and post**: opens a confirmation page; **Confirm** starts the post (usually live within a couple of minutes).
-- **Generate new captions / new image / both**: a fresh email follows in a few minutes. Three of these per week at most; the email shows how many are left.
-- **Skip this week**: nothing posts.
-- Each link works once, and only until its expiry shown in the email. Once a caption is approved or skipped, the rest of that week's links stop working.
+- **Generate new captions / new image / both**: a fresh email follows in a few minutes. Three of these per draft at most; the email shows how many are left.
+- **Skip this draft**: nothing posts.
+- Each link works once, and only until its expiry shown in the email. Once a caption is approved or skipped, the rest of that draft's links (including its regenerations) stop working. There is no limit per week: each scheduled run is a separate draft, so how often posts go out is set by the schedule in `weekly.yml`, not by the Worker.
 - **Fallback without the email:** Actions > *Publish approved post* > Run workflow. Enter the run ID of the draft run (the number at the end of its URL) and the option number.
 
 ## Customising
 - `themes.json`: brand tone, image style and the 12 rotating topics. Edit freely, or force one with `THEME_ID`.
 - **Who appears in the images:** image models tend to favour one look, so for the themes that show a person (those with `{person}` in their `image` text) the script picks a random person each run, such as "a woman in her 50s of Indian heritage", and states it in the image prompt. The lists it draws from (`genders`, `ages`, `backgrounds`) are in the `people` section of `themes.json`; add, remove or repeat entries to change the mix (repeating an entry makes it more likely). A regenerated image never repeats the previous person, and "new captions" keeps the same image and person. The chosen person is saved in the draft and shown in the run log (`Person in the image: ...`). To make another theme show a person, put `{person}` in its `image` text, for example `"A portrait of {person} smiling naturally"`.
-- Schedule: edit the `cron` line in `.github/workflows/weekly.yml` (times are UTC).
+- Schedule: edit the `cron` line in `.github/workflows/weekly.yml` (times are UTC). Add a second `- cron:` line for a second draft in the week; each run is approved separately.
 - The caption instructions and the default template are in `post_weekly.py` (`_prompts`, `fallback_caption`); banned wording is the `BANNED` list.
 - Local run: `pip install -r requirements.txt`, copy `.env.example` to `.env`, export the variables, then `python post_weekly.py generate --dry-run` (open `out/email-preview.html` to see the email).
 

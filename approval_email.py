@@ -121,13 +121,13 @@ def build_message(
 
     if left > 0:
         regen_html = "".join(_button(other_links[a], label, primary=False) for a, label in others)
-        regen_note = f"Regenerations left this week: {left} of {max_regens}."
+        regen_note = f"Regenerations left for this draft: {left} of {max_regens}."
     else:
         regen_html = (
             '<p style="font:14px/1.5 Arial,Helvetica,sans-serif;color:#23302f;margin:6px 0;">'
-            "No regenerations left this week. Approve one of the options above, or skip this week.</p>"
+            "No regenerations left for this draft. Approve one of the options above, or skip it.</p>"
         )
-        regen_note = f"Regenerations left this week: 0 of {max_regens}."
+        regen_note = f"Regenerations left for this draft: 0 of {max_regens}."
 
     banner = ""
     if dry:
@@ -139,7 +139,7 @@ def build_message(
     html_doc = f"""<!doctype html>
 <html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light">
-<title>Approve this week's Instagram post</title></head>
+<title>Approve this Instagram post</title></head>
 <body style="margin:0;padding:0;background:#f3f5f4;">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#f3f5f4"><tr><td align="center" style="padding:24px 12px;">
 <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" bgcolor="#ffffff" style="width:100%;max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;">
@@ -155,7 +155,7 @@ def build_message(
 <div style="border-top:1px solid #d9e2e0;padding-top:16px;font:700 15px Arial,Helvetica,sans-serif;color:#23302f;">Not quite right?</div>
 {regen_html}
 <p style="font:12px Arial,Helvetica,sans-serif;color:#6b7b79;margin:4px 0 10px;">{_esc(regen_note)}</p>
-{_button(skip_link, "Skip this week (post nothing)", primary=False)}
+{_button(skip_link, "Skip this draft (post nothing)", primary=False)}
 </td></tr>
 <tr><td style="padding:12px 24px 24px;font:12px/1.5 Arial,Helvetica,sans-serif;color:#6b7b79;">
 Each button opens a confirmation page first; nothing happens until you confirm there. Links can be used once.
@@ -167,7 +167,7 @@ Imagery is illustrative. Sent automatically by the FDC Instagram automation.
     lines = []
     if dry:
         lines += ["TEST RUN: placeholder image, nothing will be posted.", ""]
-    lines += [f"Approve this week's Instagram post: {topic}", "",
+    lines += [f"Approve this Instagram post: {topic}", "",
               f"Links work until {_expiry_text(exp)}. Each opens a confirmation page first.", ""]
     for c in cands:
         lines += [f"--- Option {c['number']}: {c['label']} ---", c["caption"], "",
@@ -178,14 +178,14 @@ Imagery is illustrative. Sent automatically by the FDC Instagram automation.
             lines += [f"{label}: {other_links[a]}"]
         lines += [regen_note]
     else:
-        lines += ["No regenerations left this week."]
-    lines += [f"Skip this week: {skip_link}"]
+        lines += ["No regenerations left for this draft."]
+    lines += [f"Skip this draft: {skip_link}"]
     text = "\n".join(lines)
 
     # ------------------------------------------------------------- message
     msg = EmailMessage()
     prefix = "[TEST] " if dry else ""
-    msg["Subject"] = f"{prefix}Approve this week's Instagram post: {topic}"[:200]
+    msg["Subject"] = f"{prefix}Approve this Instagram post: {topic}"[:200]
     msg["From"] = formataddr((from_name, from_addr))
     msg["To"] = to_addr
     msg["Date"] = formatdate(localtime=False)

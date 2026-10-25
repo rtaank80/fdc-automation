@@ -36,7 +36,7 @@ GRAPH = os.getenv("GRAPH_VERSION", "v25.0")
 # Instagram API with Instagram Login: no Facebook Page needed.
 IG_BASE = "https://graph.instagram.com"
 DRAFT_DAYS = 5  # the draft and its email links expire after this many days
-MAX_REGENS = 3  # regenerations allowed per week (enforced by the Worker, shown in the email)
+MAX_REGENS = 3  # regenerations allowed per draft (enforced by the Worker, shown in the email)
 
 # Words and phrases that must never appear in a dental advert (ASA/CAP and GDC style guidance).
 BANNED = [
@@ -378,7 +378,7 @@ def draft_markdown(draft: dict) -> str:
     when = dt.datetime.fromtimestamp(draft["expires_at"], dt.timezone.utc).strftime("%Y-%m-%d %H:%M")
     lines = [
         f"# Draft: {draft['topic']}", "",
-        f"Mode: {draft['mode']} | regenerations used this week: {draft['regens_used']} | expires {when} UTC", "",
+        f"Mode: {draft['mode']} | regenerations used for this draft: {draft['regens_used']} | expires {when} UTC", "",
     ]
     for c in draft["candidates"]:
         lines += [f"## Option {c['number']}: {c['label']}", "", c["caption"], "", "---", ""]
@@ -457,7 +457,8 @@ def cmd_generate(args: argparse.Namespace) -> None:
         prompt = generate_image(cfg, theme, image_path, args.dry_run, variation=(mode != "new"), person=person)
 
     draft = {
-        "week": prev["week"] if prev else iso_week(),
+        # Groups a scheduled run with its regenerations (the Worker's limits apply per group, not per week).
+        "week": prev["week"] if prev else f"{iso_week()}-{os.getenv('DRAFT_RUN_ID') or 'local'}",
         "theme": theme["id"],
         "topic": theme["topic"],
         "mode": mode,
