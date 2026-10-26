@@ -6,20 +6,56 @@
     "instagram": "@fdc.dental",
     "tone": "calm, warm, considered, reassuring; 'still you, just more confident'; never pushy",
     "disclaimer": "Imagery is illustrative. Individual results vary.",
-    "base_hashtags": ["#FamilyDentalCentre", "#Birmingham", "#CosmeticDentistry"]
-  },
-  "image_style": "Soft natural daylight, clean modern premium editorial photography feel, warm neutral palette with fresh teal and white accents, shallow depth of field, calm and elegant. No text, no logos, no watermarks, no before/after split images, no exaggerated or unnaturally white teeth, no clinical or scary imagery.",
-  "people": {
-    "_note": "Themes whose image text contains {person} get a random person from these lists on every run (never the same person twice in a row on a regenerate). Edit freely; add or remove entries to change the mix.",
-    "genders": ["woman", "man"],
-    "ages": ["20s", "30s", "40s", "50s", "60s"],
-    "backgrounds": [
-      "of Black British heritage", "of Caribbean heritage", "of African heritage",
-      "of Indian heritage", "of Pakistani heritage", "of Bangladeshi heritage",
-      "of Chinese heritage", "of Southeast Asian heritage", "of Middle Eastern heritage",
-      "of white British heritage", "of Southern European heritage", "of Latin American heritage",
-      "of mixed heritage"
+    "base_hashtags": [
+      "#FamilyDentalCentre",
+      "#Birmingham",
+      "#CosmeticDentistry"
     ]
+  },
+  "image_style": "Soft natural daylight, clean modern premium editorial photography feel, warm neutral palette with fresh teal and white accents, shallow depth of field, calm and elegant. No text, no logos, no watermarks, no before/after split images, no exaggerated or unnaturally white teeth, no clinical or scary imagery. No festive, holiday or party styling, no decorations, no costumes.",
+  "people": {
+    "_note": "Themes whose image text contains {person} get a random person on every run (never the same person twice in a row on a regenerate). Each group is picked with the given weight (out of the total), then a background from that group. Edit weights or backgrounds freely.",
+    "genders": [
+      "woman",
+      "man"
+    ],
+    "ages": [
+      "20s",
+      "30s",
+      "40s",
+      "50s",
+      "60s"
+    ],
+    "groups": [
+      {
+        "name": "white",
+        "weight": 80,
+        "backgrounds": [
+          "of white British heritage"
+        ]
+      },
+      {
+        "name": "black",
+        "weight": 10,
+        "backgrounds": [
+          "of Black British heritage",
+          "of Caribbean heritage",
+          "of African heritage"
+        ]
+      },
+      {
+        "name": "asian",
+        "weight": 10,
+        "backgrounds": [
+          "of Indian heritage",
+          "of Pakistani heritage",
+          "of Bangladeshi heritage",
+          "of Chinese heritage",
+          "of Southeast Asian heritage"
+        ]
+      }
+    ],
+    "clothing": "wearing ordinary everyday clothes such as a plain shirt, t-shirt or knitted top in neutral colours"
   },
   "themes": [
     {
@@ -49,7 +85,7 @@
     {
       "id": "confidence",
       "topic": "Confidence and a natural smile",
-      "image": "A candid photograph of {person} laughing naturally outdoors in autumn light, warm, teeth visible but natural",
+      "image": "A candid photograph of {person} laughing naturally outdoors in soft natural daylight, teeth visible but natural",
       "angle": "The most beautiful smile is one that feels like yours"
     },
     {
@@ -78,8 +114,8 @@
     },
     {
       "id": "events-season",
-      "topic": "Feeling ready for the festive season and special occasions",
-      "image": "Warm festive evening lights softly blurred in the background, a portrait of {person} smiling naturally, cosy and elegant",
+      "topic": "Looking and feeling your best for life's occasions",
+      "image": "A portrait of {person}, smiling naturally in soft daylight, relaxed and confident, neutral plain background, elegant and understated",
       "angle": "Planning ahead for a smile you feel good about; book early for a consultation"
     },
     {

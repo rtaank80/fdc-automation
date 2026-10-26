@@ -328,10 +328,16 @@ def pick_person(cfg: dict, avoid: str | None = None) -> str | None:
     if not pool:
         return None
     person = None
+    groups = pool.get("groups")
     for _ in range(30):
+        if groups:  # weighted: e.g. 80% white, 10% Black, 10% Asian
+            group = random.choices(groups, weights=[g["weight"] for g in groups])[0]
+            background = random.choice(group["backgrounds"])
+        else:
+            background = random.choice(pool["backgrounds"])
         gender = random.choice(pool["genders"])
         pronoun = "her" if gender == "woman" else "his"
-        person = f"a {gender} in {pronoun} {random.choice(pool['ages'])} {random.choice(pool['backgrounds'])}"
+        person = f"a {gender} in {pronoun} {random.choice(pool['ages'])} {background}"
         if person != avoid:
             break
     return person
@@ -341,6 +347,10 @@ def generate_image(
     cfg: dict, theme: dict, path: Path, dry_run: bool, variation: bool = False, person: str | None = None
 ) -> str:
     scene = theme["image"].replace("{person}", person or "an adult")
+    if "{person}" in theme["image"]:
+        clothing = (cfg.get("people") or {}).get("clothing")
+        if clothing:
+            scene += f", {clothing}"
     prompt = (
         f"{scene}. Topic: {theme['topic']}. Style: {cfg['image_style']} "
         "Square composition, leave natural breathing room. Realistic, tasteful, not stock-photo cliché. "
