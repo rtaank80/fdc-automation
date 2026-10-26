@@ -7,7 +7,7 @@
 // Each link is signed in post_weekly.py / approval_email.py:
 //   token = base64url(JSON payload) + "." + base64url(HMAC-SHA256(LINK_SECRET, base64url(JSON payload)))
 //   payload: a=action, d=draft run id, c=option number, l=option label, w=ISO week, e=expiry (epoch s),
-//            t=post topic, x=1 for a test (dry run) draft
+//            i=chosen image letter (A or B), t=post topic, x=1 for a test (dry run) draft
 //   w is the draft chain id: one scheduled run plus any regenerations of it. There is no weekly limit;
 //   how often posts happen is controlled by the schedule in weekly.yml.
 //
@@ -23,9 +23,9 @@ const DAY = 86400;
 
 const ACTIONS = {
   approve: { label: "Approve and post to Instagram" },
-  captions: { label: "Generate new captions (keeping the image)", mode: "captions" },
-  image: { label: "Generate a new image (keeping the captions)", mode: "image" },
-  all: { label: "Generate a new image and new captions", mode: "all" },
+  captions: { label: "Generate new captions (keeping the images)", mode: "captions" },
+  image: { label: "Generate new images (keeping the captions)", mode: "image" },
+  all: { label: "Generate new images and new captions", mode: "all" },
   skip: { label: "Skip this draft (post nothing)" },
 };
 
@@ -81,15 +81,16 @@ async function doAction(p, token, env) {
       await dispatch(env, "publish.yml", {
         draft_run_id: String(p.d),
         option: String(p.c),
+        image: /^[A-Z]$/.test(String(p.i || "")) ? String(p.i) : "A",
         dry_run: test ? "true" : "false",
       });
-      if (!test) await kv.put(decidedKey, `option ${p.c} approved`, ttl);
+      if (!test) await kv.put(decidedKey, `option ${p.c} with image ${p.i || "A"} approved`, ttl);
       await kv.put(usedKey, "1", ttl);
       return page(
         test ? "Test approved" : "Approved",
         test
-          ? `Option ${esc(p.c)} approved. This was a test draft, so nothing is posted to Instagram; check the "Publish approved post" run in GitHub Actions.`
-          : `Option ${esc(p.c)} approved. It is being posted to Instagram now and should appear within a few minutes.`,
+          ? `Option ${esc(p.c)} with image ${esc(p.i || "A")} approved. This was a test draft, so nothing is posted to Instagram; check the "Publish approved post" run in GitHub Actions.`
+          : `Option ${esc(p.c)} with image ${esc(p.i || "A")} approved. It is being posted to Instagram now and should appear within a few minutes.`,
         200,
       );
     }
@@ -169,7 +170,7 @@ function esc(s) {
 
 function confirmPage(p, token) {
   const act = ACTIONS[p.a];
-  const detail = p.a === "approve" ? `Option ${esc(p.c)} (${esc(p.l || "")})` : "";
+  const detail = p.a === "approve" ? `Option ${esc(p.c)} (${esc(p.l || "")}) with image ${esc(p.i || "A")}` : "";
   const test = p.x === 1 ? `<p class="test">Test draft: nothing will be posted to Instagram.</p>` : "";
   const body = `
     <p class="topic">${esc(p.t || "")}</p>
