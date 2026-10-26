@@ -9,7 +9,7 @@ The Worker checks the signature and expiry, shows a confirmation page, and only 
 presses Confirm there (so mail scanners that merely open links cannot approve anything).
 
 Payload keys: a = action (approve | skip | captions | image | all), d = draft id (GitHub run id),
-c = chosen option number (approve only), l = option label, w = ISO week, e = expiry (epoch seconds),
+c = chosen option number (approve only), i = chosen image letter (approve only), l = option label, w = ISO week, e = expiry (epoch seconds),
 t = post topic, x = 1 when the draft is a dry run.
 """
 from __future__ import annotations
@@ -25,7 +25,7 @@ import ssl
 from email.message import EmailMessage
 from email.utils import formataddr, formatdate, make_msgid
 
-CID = "postimage"
+CID = "postimage"  # each image gets its own id: postimage-a, postimage-b
 TEAL = "#1f7a78"
 
 
@@ -73,7 +73,7 @@ def _button(url: str, label: str, primary: bool = True) -> str:
 
 def build_message(
     draft: dict,
-    image: bytes,
+    images: dict,
     *,
     base_url: str,
     key: str,
@@ -94,11 +94,15 @@ def build_message(
         return make_link(base_url, {**base, "a": action, **extra}, key)
 
     cands = draft["candidates"]
-    approve_links = {c["number"]: link("approve", c=c["number"], l=c["label"]) for c in cands}
+    letters = sorted(images)
+    approve_links = {
+        (c["number"], L): link("approve", c=c["number"], i=L, l=c["label"]) for c in cands for L in letters
+    }
+    many = len(letters) > 1
     others = [
-        ("captions", "Generate new captions (image is fine)"),
-        ("image", "Generate a new image (captions are fine)"),
-        ("all", "Generate a new image and new captions"),
+        ("captions", "Generate new captions (images are fine)" if many else "Generate new captions (image is fine)"),
+        ("image", "Generate new images (captions are fine)" if many else "Generate a new image (captions are fine)"),
+        ("all", "Generate new images and new captions" if many else "Generate a new image and new captions"),
     ]
     other_links = {a: link(a) for a, _ in others}
     skip_link = link("skip")
@@ -115,7 +119,12 @@ def build_message(
             f'<div style="font:15px/1.55 Georgia,\'Times New Roman\',serif;color:#23302f;">{body}</div>'
             f'<div style="font:12px Arial,Helvetica,sans-serif;color:#6b7b79;margin:10px 0 4px;">'
             f'Image description: {_esc(c["alt_text"])}</div>'
-            f'{_button(approve_links[c["number"]], f"Approve option {c["number"]} and post")}'
+            + "".join(
+                _button(approve_links[(c["number"], L)],
+                        f"Approve option {c['number']} with image {L}" if many else f"Approve option {c['number']} and post")
+                for L in letters
+            )
+            +
             "</td></tr></table>"
         )
 
@@ -128,6 +137,15 @@ def build_message(
             "No regenerations left for this draft. Approve one of the options above, or skip it.</p>"
         )
         regen_note = f"Regenerations left for this draft: 0 of {max_regens}."
+
+    image_rows = "".join(
+        '<tr><td style="padding:16px 24px 0;">'
+        + (f'<div style="font:700 13px Arial,Helvetica,sans-serif;letter-spacing:.04em;text-transform:uppercase;'
+           f'color:{TEAL};margin-bottom:6px;">Image {L}</div>' if many else "")
+        + f'<img src="cid:{CID}-{L.lower()}" width="552" alt="{_esc(cands[0]["alt_text"])}" '
+        'style="display:block;width:100%;max-width:552px;height:auto;border-radius:10px;"></td></tr>'
+        for L in letters
+    )
 
     banner = ""
     if dry:
@@ -147,9 +165,9 @@ def build_message(
 <tr><td style="padding:24px 24px 8px;">
 <div style="font:700 12px Arial,Helvetica,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:{TEAL};">FDC Instagram &middot; approval needed</div>
 <h1 style="font:700 22px/1.3 Georgia,'Times New Roman',serif;color:#23302f;margin:6px 0 4px;">{_esc(topic)}</h1>
-<p style="font:14px/1.5 Arial,Helvetica,sans-serif;color:#5c6b69;margin:0;">Pick the caption you want, or ask for something different. Nothing is posted unless you approve. These links work until {_esc(_expiry_text(exp))}.</p>
+<p style="font:14px/1.5 Arial,Helvetica,sans-serif;color:#5c6b69;margin:0;">Pick the caption and image you want, or ask for something different. Nothing is posted unless you approve. These links work until {_esc(_expiry_text(exp))}.</p>
 </td></tr>
-<tr><td style="padding:16px 24px 8px;"><img src="cid:{CID}" width="552" alt="{_esc(cands[0]['alt_text'])}" style="display:block;width:100%;max-width:552px;height:auto;border-radius:10px;"></td></tr>
+{image_rows}
 <tr><td style="padding:12px 24px 0;">{"".join(cards)}</td></tr>
 <tr><td style="padding:4px 24px 8px;">
 <div style="border-top:1px solid #d9e2e0;padding-top:16px;font:700 15px Arial,Helvetica,sans-serif;color:#23302f;">Not quite right?</div>
@@ -171,7 +189,7 @@ Imagery is illustrative. Sent automatically by the FDC Instagram automation.
               f"Links work until {_expiry_text(exp)}. Each opens a confirmation page first.", ""]
     for c in cands:
         lines += [f"--- Option {c['number']}: {c['label']} ---", c["caption"], "",
-                  f"Approve option {c['number']}: {approve_links[c['number']]}", ""]
+                  *[f"Approve option {c['number']} with image {L}: {approve_links[(c['number'], L)]}" for L in letters], ""]
     lines += ["--- Not quite right? ---"]
     if left > 0:
         for a, label in others:
@@ -192,14 +210,17 @@ Imagery is illustrative. Sent automatically by the FDC Instagram automation.
     msg["Message-ID"] = make_msgid(domain=from_addr.split("@")[-1])
     msg.set_content(text)
     msg.add_alternative(html_doc, subtype="html")
-    msg.get_payload()[1].add_related(image, maintype="image", subtype="jpeg", cid=f"<{CID}>")
+    for L in letters:
+        msg.get_payload()[1].add_related(images[L], maintype="image", subtype="jpeg", cid=f"<{CID}-{L.lower()}>")
     return msg, html_doc, text
 
 
-def preview_html(html_doc: str, image: bytes) -> str:
-    """The same email as a standalone file you can open in a browser (image embedded)."""
-    uri = "data:image/jpeg;base64," + base64.b64encode(image).decode("ascii")
-    return html_doc.replace(f"cid:{CID}", uri)
+def preview_html(html_doc: str, images: dict) -> str:
+    """The same email as a standalone file you can open in a browser (images embedded)."""
+    for L, data in images.items():
+        uri = "data:image/jpeg;base64," + base64.b64encode(data).decode("ascii")
+        html_doc = html_doc.replace(f"cid:{CID}-{L.lower()}", uri)
+    return html_doc
 
 
 def send(msg: EmailMessage, host: str, port: int, user: str, password: str) -> None:

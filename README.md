@@ -4,9 +4,9 @@ Every week this prepares a post for **@fdc.dental**: an AI-generated cosmetic de
 
 ```
 GitHub Actions cron (Tuesday 09:00 UTC)  "Weekly Instagram draft"
-  -> pick theme -> up to 3 captions (1 template, 2 Claude, 3 Cloudflare) + an image
-  -> email to the approver: the image, each caption with its own Approve button, and
-     "new captions", "new image", "new everything" and "skip" buttons
+  -> pick theme -> up to 3 captions (1 template, 2 Claude, 3 Cloudflare) + two images (A and B, made at the same time)
+  -> email to the approver: both images, each caption with an Approve button per image, and
+     "new captions", "new images", "new everything" and "skip" buttons
   -> a button opens a confirmation page (Cloudflare Worker); pressing Confirm acts:
         Approve  -> "Publish approved post" workflow -> Instagram
         New ...  -> a fresh draft email (3 per draft at most)
@@ -96,15 +96,15 @@ Repo > Settings > Secrets and variables > Actions.
 4. After that it runs by itself every Tuesday. Disable it any time under Actions > the workflow > **...** > Disable workflow.
 
 ## Using the email
-- **Approve option N and post**: opens a confirmation page; **Confirm** starts the post (usually live within a couple of minutes).
-- **Generate new captions / new image / both**: a fresh email follows in a few minutes. Three of these per draft at most; the email shows how many are left.
+- **Approve option N with image A / image B**: one button per image under each caption; opens a confirmation page; **Confirm** starts the post (usually live within a couple of minutes).
+- **Generate new captions / new images / both** (new images replaces both A and B): a fresh email follows in a few minutes. Three of these per draft at most; the email shows how many are left.
 - **Skip this draft**: nothing posts.
 - Each link works once, and only until its expiry shown in the email. Once a caption is approved or skipped, the rest of that draft's links (including its regenerations) stop working. There is no limit per week: each scheduled run is a separate draft, so how often posts go out is set by the schedule in `weekly.yml`, not by the Worker.
 - **Fallback without the email:** Actions > *Publish approved post* > Run workflow. Enter the run ID of the draft run (the number at the end of its URL) and the option number.
 
 ## Customising
 - `themes.json`: brand tone, image style and the 12 rotating topics. Edit freely, or force one with `THEME_ID`.
-- **Who appears in the images:** image models tend to favour one look, so for the themes that show a person (those with `{person}` in their `image` text) the script picks a random person each run, such as "a woman in her 50s of Indian heritage", and states it in the image prompt. The mix is set in the `people` section of `themes.json`: each entry in `groups` has a `weight` (currently white 80, Black 10, Asian 10, i.e. 80%/10%/10%) and its own list of `backgrounds`, plus `genders`, `ages` and a `clothing` phrase (ordinary everyday clothes) added to the prompt. Change the weights to change the mix. A regenerated image never repeats the previous person, and "new captions" keeps the same image and person. The chosen person is saved in the draft and shown in the run log (`Person in the image: ...`). To make another theme show a person, put `{person}` in its `image` text, for example `"A portrait of {person} smiling naturally"`.
+- **Who appears in the images:** image models tend to favour one look, so for the themes that show a person (those with `{person}` in their `image` text) the script picks a different random person for image A and for image B (never the same person, never the same age band, and never the people in the draft being replaced), such as "a woman in her 50s of Indian heritage", and states it in the image prompt. The mix is set in the `people` section of `themes.json`: each entry in `groups` has a `weight` (currently white 80, Black 10, Asian 10, i.e. 80%/10%/10%) and its own list of `backgrounds`, plus `genders`, `ages` and a `clothing` phrase (ordinary everyday clothes) added to the prompt. Change the weights to change the mix. A regenerated image never repeats the previous person, and "new captions" keeps the same image and person. The chosen person is saved in the draft and shown in the run log (`Person in the image: ...`). To make another theme show a person, put `{person}` in its `image` text, for example `"A portrait of {person} smiling naturally"`.
 - Schedule: edit the `cron` line in `.github/workflows/weekly.yml` (times are UTC). Add a second `- cron:` line for a second draft in the week; each run is approved separately.
 - The caption instructions and the default template are in `post_weekly.py` (`_prompts`, `fallback_caption`); banned wording is the `BANNED` list.
 - Local run: `pip install -r requirements.txt`, copy `.env.example` to `.env`, export the variables, then `python post_weekly.py generate --dry-run` (open `out/email-preview.html` to see the email).

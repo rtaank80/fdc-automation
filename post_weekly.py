@@ -24,6 +24,7 @@ import shutil
 import sys
 import time
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import requests
@@ -44,6 +45,8 @@ BANNED = [
     "100%", "miracle", "instant results", "permanent whitening", "cure", "no risk",
     "before and after", "before & after", "discount", "% off", "limited offer",
 ]
+
+LETTERS = ["A", "B"]  # the images offered in each draft
 
 VARIATIONS = [
     "Try a different camera angle and framing.",
@@ -246,13 +249,13 @@ def build_candidates(cfg: dict, theme: dict, dry_run: bool = False, avoid: list[
 
 
 # ---------------------------------------------------------------- image
-def make_placeholder(theme: dict, path: Path) -> None:
+def make_placeholder(theme: dict, path: Path, label: str = "") -> None:
     from PIL import Image, ImageDraw
 
     img = Image.new("RGB", (1080, 1080), (214, 238, 238))
     d = ImageDraw.Draw(img)
     d.rectangle([60, 60, 1020, 1020], outline=(40, 120, 120), width=6)
-    d.text((100, 500), f"DRY RUN PLACEHOLDER\n{theme['topic']}", fill=(30, 90, 90))
+    d.text((100, 500), f"DRY RUN PLACEHOLDER {label}\n{theme['topic']}", fill=(30, 90, 90))
     img.save(path, "JPEG", quality=92)
 
 
@@ -282,7 +285,7 @@ def _cloudflare_image(prompt: str) -> bytes:
     account = os.getenv("CLOUDFLARE_ACCOUNT_ID") or sys.exit("CLOUDFLARE_ACCOUNT_ID is not set.")
     token = os.getenv("CLOUDFLARE_API_TOKEN") or sys.exit("CLOUDFLARE_API_TOKEN is not set.")
     model = os.getenv("IMAGE_MODEL", "@cf/black-forest-labs/flux-2-klein-9b")
-    fields = {"prompt": prompt, "width": "1024", "height": "1024"}
+    fields = {"prompt": prompt, "width": "1024", "height": "1024", "seed": str(random.randint(1, 2**31 - 1))}
     # Cloudflare sometimes answers with a temporary 5xx (error 3043 "Internal server error") or 429.
     # Retrying after a pause normally works, so try up to 5 times before giving up.
     waits = [15, 30, 60, 120]
@@ -319,17 +322,20 @@ def _cloudflare_image(prompt: str) -> bytes:
     return base64.b64decode(b64)
 
 
-def pick_person(cfg: dict, avoid: str | None = None) -> str | None:
+def pick_person(cfg: dict, avoid=None, avoid_age: str | None = None) -> str | None:
     """A random person description such as 'a woman in her 50s of Indian heritage'.
 
     Image models drift towards one look unless told who to draw, so we choose explicitly each time.
+    `avoid` is a description (or a collection of them) that must not be repeated; `avoid_age` is an
+    age band such as "40s" that must not be used.
     """
     pool = cfg.get("people")
     if not pool:
         return None
-    person = None
+    avoid = {avoid} if isinstance(avoid, str) else set(avoid or [])
     groups = pool.get("groups")
-    for _ in range(30):
+    person = None
+    for _ in range(60):
         if groups:  # weighted: e.g. 80% white, 10% Black, 10% Asian
             group = random.choices(groups, weights=[g["weight"] for g in groups])[0]
             background = random.choice(group["backgrounds"])
@@ -337,14 +343,34 @@ def pick_person(cfg: dict, avoid: str | None = None) -> str | None:
             background = random.choice(pool["backgrounds"])
         gender = random.choice(pool["genders"])
         pronoun = "her" if gender == "woman" else "his"
-        person = f"a {gender} in {pronoun} {random.choice(pool['ages'])} {background}"
-        if person != avoid:
+        age = random.choice(pool["ages"])
+        person = f"a {gender} in {pronoun} {age} {background}"
+        if person not in avoid and age != avoid_age:
             break
     return person
 
 
+def pick_people(cfg: dict, n: int, avoid=None) -> list[str | None]:
+    """n different people for one draft's images: all different, each in a different age band,
+    and none the same as the people in the draft being replaced."""
+    avoid = set(a for a in (avoid or []) if a)
+    chosen: list[str | None] = []
+    ages: set[str] = set()
+    for _ in range(n):
+        p = pick_person(cfg, avoid=avoid | set(chosen))
+        for _ in range(60):  # nudge towards a different age band than the other images
+            if p is None or p.split(" ")[3] not in ages:
+                break
+            p = pick_person(cfg, avoid=avoid | set(chosen))
+        chosen.append(p)
+        if p:
+            ages.add(p.split(" ")[3])
+    return chosen
+
+
 def generate_image(
-    cfg: dict, theme: dict, path: Path, dry_run: bool, variation: bool = False, person: str | None = None
+    cfg: dict, theme: dict, path: Path, dry_run: bool, variation: str = "", person: str | None = None,
+    label: str = "",
 ) -> str:
     scene = theme["image"].replace("{person}", person or "an adult")
     if "{person}" in theme["image"]:
@@ -356,10 +382,10 @@ def generate_image(
         "Square composition, leave natural breathing room. Realistic, tasteful, not stock-photo cliché. "
         "Any person is an authentic, respectful, natural-looking adult, never a caricature."
     )
-    if variation:  # a regenerated image should look different from the one it replaces
-        prompt += " " + random.choice(VARIATIONS)
+    if variation:  # makes the images in one draft (and a regenerated image) look different from each other
+        prompt += " " + variation
     if dry_run:
-        make_placeholder(theme, path)
+        make_placeholder(theme, path, label)
         return prompt
     from PIL import Image
 
@@ -407,12 +433,21 @@ def draft_markdown(draft: dict) -> str:
         f"# Draft: {draft['topic']}", "",
         f"Mode: {draft['mode']} | regenerations used for this draft: {draft['regens_used']} | expires {when} UTC", "",
     ]
+    for im in prev_images(draft, OUT):
+        lines += [f"Image {im['id']}: {im.get('person') or 'no person'}"]
+    lines += [""]
     for c in draft["candidates"]:
         lines += [f"## Option {c['number']}: {c['label']}", "", c["caption"], "", "---", ""]
     return "\n".join(lines)
 
 
-def send_approval_email(draft: dict, image: bytes, dry_run: bool) -> None:
+def prev_images(draft: dict, folder: Path) -> list[dict]:
+    """The images listed in a draft (drafts made before two-image support have a single image.jpg)."""
+    return draft.get("images") or [{"id": "A", "file": "image.jpg", "person": draft.get("person"),
+                                    "prompt": draft.get("image_prompt", "")}]
+
+
+def send_approval_email(draft: dict, images: dict, dry_run: bool) -> None:
     needed = ["APPROVAL_BASE_URL", "LINK_SECRET", "APPROVER_EMAIL", "SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD"]
     missing = [n for n in needed if not os.getenv(n)]
     if missing:
@@ -423,7 +458,7 @@ def send_approval_email(draft: dict, image: bytes, dry_run: bool) -> None:
         sys.exit(text)
     msg, html_doc, _ = approval_email.build_message(
         draft,
-        image,
+        images,
         base_url=os.environ["APPROVAL_BASE_URL"],
         key=os.environ["LINK_SECRET"],
         to_addr=os.environ["APPROVER_EMAIL"],
@@ -431,7 +466,7 @@ def send_approval_email(draft: dict, image: bytes, dry_run: bool) -> None:
         draft_id=os.getenv("DRAFT_RUN_ID") or "local",
         max_regens=MAX_REGENS,
     )
-    (OUT / "email-preview.html").write_text(approval_email.preview_html(html_doc, image), encoding="utf-8")
+    (OUT / "email-preview.html").write_text(approval_email.preview_html(html_doc, images), encoding="utf-8")
     try:
         approval_email.send(
             msg, os.environ["SMTP_HOST"], int(os.getenv("SMTP_PORT") or 587),
@@ -471,17 +506,29 @@ def cmd_generate(args: argparse.Namespace) -> None:
         candidates = prev["candidates"]
     log("Caption options: " + ", ".join(f"{c['number']}={c['label']}" for c in candidates))
 
-    image_path = OUT / "image.jpg"
-    person = None
-    if mode == "captions":  # keep the existing image (and so the same person)
-        shutil.copyfile(prev_dir / "image.jpg", image_path)
-        prompt = prev.get("image_prompt", "")
-        person = prev.get("person")
+    # Two images per draft so the approver can choose. Each has its own randomly chosen person.
+    if mode == "captions":  # keep the existing images (and so the same people)
+        images = prev_images(prev, prev_dir)
+        for im in images:
+            shutil.copyfile(prev_dir / im["file"], OUT / im["file"])
     else:
-        if "{person}" in theme["image"]:
-            person = pick_person(cfg, avoid=prev.get("person") if prev else None)
-            log(f"Person in the image: {person}")
-        prompt = generate_image(cfg, theme, image_path, args.dry_run, variation=(mode != "new"), person=person)
+        wants_person = "{person}" in theme["image"]
+        prev_people = [im.get("person") for im in (prev or {}).get("images", [])]
+        people = pick_people(cfg, len(LETTERS), avoid=prev_people) if wants_person else [None] * len(LETTERS)
+        phrases = random.sample(VARIATIONS, len(LETTERS))
+
+        def make(i: int) -> dict:
+            letter = LETTERS[i]
+            fname = f"image-{letter.lower()}.jpg"
+            prompt = generate_image(cfg, theme, OUT / fname, args.dry_run, variation=phrases[i],
+                                    person=people[i], label=f"IMAGE {letter}")
+            return {"id": letter, "file": fname, "person": people[i], "prompt": prompt}
+
+        for letter, person in zip(LETTERS, people):
+            if person:
+                log(f"Person in image {letter}: {person}")
+        with ThreadPoolExecutor(max_workers=len(LETTERS)) as pool:  # both images at the same time
+            images = list(pool.map(make, range(len(LETTERS))))
 
     draft = {
         # Groups a scheduled run with its regenerations (the Worker's limits apply per group, not per week).
@@ -493,14 +540,13 @@ def cmd_generate(args: argparse.Namespace) -> None:
         "expires_at": int(time.time()) + DRAFT_DAYS * 86400,
         "regens_used": regens_used,
         "dry_run": bool(args.dry_run),
-        "image_prompt": prompt,
-        "person": person,
+        "images": images,
         "candidates": candidates,
     }
     (OUT / "draft.json").write_text(json.dumps(draft, indent=2, ensure_ascii=False), encoding="utf-8")
     (OUT / "draft.md").write_text(draft_markdown(draft), encoding="utf-8")
     log("Draft written to out/")
-    send_approval_email(draft, image_path.read_bytes(), args.dry_run)
+    send_approval_email(draft, {im["id"]: (OUT / im["file"]).read_bytes() for im in images}, args.dry_run)
 
 
 # ---------------------------------------------------------------- hosting
@@ -579,7 +625,11 @@ def cmd_publish(args: argparse.Namespace) -> None:
     chosen = next((c for c in draft["candidates"] if str(c["number"]) == number), None)
     if chosen is None:
         sys.exit(f"Option '{number}' is not in this draft (available: {[c['number'] for c in draft['candidates']]}).")
-    log(f"Approved option {chosen['number']} ({chosen['label']})")
+    letter = (os.getenv("CHOSEN_IMAGE") or "A").strip().upper()
+    image = next((im for im in prev_images(draft, OUT) if im["id"] == letter), None)
+    if image is None:
+        sys.exit(f"Image '{letter}' is not in this draft (available: {[im['id'] for im in prev_images(draft, OUT)]}).")
+    log(f"Approved option {chosen['number']} ({chosen['label']}) with image {letter}")
     # A test draft (placeholder image) must never reach Instagram, whatever flags were passed.
     if args.dry_run or draft.get("dry_run"):
         log("DRY RUN: would host the image and publish this caption:")
@@ -587,7 +637,7 @@ def cmd_publish(args: argparse.Namespace) -> None:
         return
     if not os.getenv("IG_ACCESS_TOKEN"):
         sys.exit("IG_ACCESS_TOKEN is not set")
-    url = host_image(OUT / "image.jpg")
+    url = host_image(OUT / image["file"])
     log(f"Image hosted at {url}")
     media_id = publish_to_instagram(url, chosen["caption"], chosen["alt_text"])
     log(f"Published to Instagram. Media id: {media_id}")
