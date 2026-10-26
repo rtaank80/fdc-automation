@@ -13,6 +13,10 @@ on:
       option:
         description: "Caption option number to post (1 = template, 2 = Claude, 3 = Cloudflare)"
         required: true
+      image:
+        description: "Image letter to post (A or B)"
+        required: false
+        default: "A"
       dry_run:
         description: "Dry run (shows what would be posted, posts nothing)"
         type: boolean
@@ -44,5 +48,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DRAFT_RUN_ID: ${{ inputs.draft_run_id }}
           CHOSEN_OPTION: ${{ inputs.option }}
+          CHOSEN_IMAGE: ${{ inputs.image || 'A' }}
           DRY: ${{ inputs.dry_run && '1' || '' }}
         run: python post_weekly.py publish ${DRY:+--dry-run}
