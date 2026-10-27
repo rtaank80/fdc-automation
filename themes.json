@@ -12,7 +12,6 @@
       "#CosmeticDentistry"
     ]
   },
-  "image_style": "Soft natural daylight, clean modern premium editorial photography feel, warm neutral palette with fresh teal and white accents, shallow depth of field, calm and elegant. No text, no logos, no watermarks, no before/after split images, no exaggerated or unnaturally white teeth, no clinical or scary imagery. No festive, holiday or party styling, no decorations, no costumes.",
   "people": {
     "_note": "Themes whose image text contains {person} get a random person on every run (never the same person twice in a row on a regenerate). Each group is picked with the given weight (out of the total), then a background from that group. Edit weights or backgrounds freely.",
     "genders": [
@@ -55,80 +54,102 @@
         ]
       }
     ],
-    "clothing": "wearing ordinary everyday clothes such as a plain shirt, t-shirt or knitted top in neutral colours"
+    "clothing": "wearing ordinary everyday clothes such as a plain shirt, t-shirt or knitted top in neutral colours",
+    "look": "smiling or laughing broadly with teeth clearly visible: bright, clean, healthy-looking white teeth, evenly aligned, and healthy, clear, glowing skin"
   },
   "themes": [
     {
       "id": "whitening-intro",
       "topic": "Professional dentist-led teeth whitening",
-      "image": "A portrait of {person}, relaxed, with a natural gentle smile in soft daylight, bright but realistic teeth, tasteful lifestyle photograph",
-      "angle": "Why professional whitening is supervised by a dentist and tailored to you"
+      "image": "A portrait of {person}, relaxed, with a big natural smile, soft daylight, tasteful lifestyle photograph",
+      "angle": "Why professional whitening is supervised by a dentist and tailored to you",
+      "image_b": "{person} photographed from a three-quarter angle, mid-laugh in a bright airy cafe, candid documentary style"
     },
     {
       "id": "whitening-trays",
       "topic": "Custom-fitted home whitening trays",
-      "image": "Clean flat-lay of clear custom whitening trays in a small case on a pale stone surface with a fresh green leaf",
-      "angle": "How custom trays work and why a dental check comes first"
+      "image": "{person} smiling broadly while holding a small case containing clear custom whitening trays, soft daylight, tasteful lifestyle photograph",
+      "angle": "How custom trays work and why a dental check comes first",
+      "image_b": "{person} laughing beside a white bathroom sink, holding a small case of clear whitening trays, bright airy light"
     },
     {
       "id": "invisalign-discreet",
       "topic": "Invisalign clear aligners (FDC is an Invisalign Approved Practice)",
-      "image": "A clear aligner resting on a minimal pale surface, soft shadows, premium product-photography look",
-      "angle": "Discreet, removable aligners and a personal treatment plan"
+      "image": "A close portrait of {person} smiling broadly, holding a clear aligner between fingertips near their cheek, soft shadows, premium editorial look",
+      "angle": "Discreet, removable aligners and a personal treatment plan",
+      "image_b": "{person} laughing, photographed from the side in a bright modern office, candid and relaxed"
     },
     {
       "id": "bonding-finishing-touch",
       "topic": "Composite bonding",
-      "image": "Abstract elegant still life suggesting refinement and balance: soft pearl tones, sculpted shapes, warm light",
-      "angle": "Small, thoughtful refinements to shape and balance"
+      "image": "An elegant portrait of {person} with a warm confident smile, soft pearl tones and gentle warm light, refined and balanced",
+      "angle": "Small, thoughtful refinements to shape and balance",
+      "image_b": "{person} with a bright easy smile in front of a pale linen backdrop, close crop, light and airy"
     },
     {
       "id": "confidence",
       "topic": "Confidence and a natural smile",
-      "image": "A candid photograph of {person} laughing naturally outdoors in soft natural daylight, teeth visible but natural",
-      "angle": "The most beautiful smile is one that feels like yours"
+      "image": "A candid photograph of {person} laughing naturally outdoors in soft natural daylight, warm and joyful",
+      "angle": "The most beautiful smile is one that feels like yours",
+      "image_b": "{person} walking along a city street in soft overcast light, laughing mid-stride, candid street photography"
     },
     {
       "id": "first-conversation",
       "topic": "What happens at a cosmetic consultation",
-      "image": "A calm, welcoming modern dental reception with plants and warm lighting, no people",
-      "angle": "A conversation, a considered plan, a confident beginning; no pressure"
+      "image": "{person} smiling warmly in a calm, welcoming modern dental practice reception with plants and soft lighting",
+      "angle": "A conversation, a considered plan, a confident beginning; no pressure",
+      "image_b": "{person} laughing in an armchair holding a cup of tea in a calm consultation room, natural window light"
     },
     {
       "id": "whitening-faq",
       "topic": "Is teeth whitening suitable for everyone? (FAQ)",
-      "image": "Minimal graphic-style photograph: a pale teal background with a single glass of water and a soft shadow, calm and clean",
-      "angle": "Gently explain that suitability is assessed by a dentist; invite questions"
+      "image": "{person} smiling brightly holding a glass of water, standing against a pale teal wall, minimal and calm",
+      "angle": "Gently explain that suitability is assessed by a dentist; invite questions",
+      "image_b": "{person} smiling broadly beside a white orchid stem, pale teal wall, soft side lighting, minimalist and calm"
     },
     {
       "id": "invisalign-faq",
       "topic": "Is Invisalign suitable for me? (FAQ)",
-      "image": "A portrait of {person} looking thoughtfully and happily out of a sunlit window, soft smile, editorial style",
-      "angle": "Crowding, gaps or relapse after braces: assess first, then explain options"
+      "image": "A portrait of {person} looking thoughtfully and happily out of a sunlit window, broad soft smile, editorial style",
+      "angle": "Crowding, gaps or relapse after braces: assess first, then explain options",
+      "image_b": "{person} at a kitchen table reading on a tablet, big happy smile, bright home interior, candid lifestyle photograph"
     },
     {
       "id": "combine-treatments",
       "topic": "Combining cosmetic treatments in one plan",
-      "image": "Three simple objects arranged on a pale surface suggesting a journey in stages: a clear aligner, a small whitening tray and a soft pearl; elegant still life",
-      "angle": "A joined-up plan (for example Invisalign then whitening), tailored to you"
+      "image": "{person} smiling confidently, half-turned towards the camera against a clean pale background, elegant and understated",
+      "angle": "A joined-up plan (for example Invisalign then whitening), tailored to you",
+      "image_b": "{person} laughing in a park in soft diffused light, relaxed and carefree, candid"
     },
     {
       "id": "events-season",
       "topic": "Looking and feeling your best for life's occasions",
       "image": "A portrait of {person}, smiling naturally in soft daylight, relaxed and confident, neutral plain background, elegant and understated",
-      "angle": "Planning ahead for a smile you feel good about; book early for a consultation"
+      "angle": "Planning ahead for a smile you feel good about; book early for a consultation",
+      "image_b": "{person} seated and relaxed beside a window, confident broad smile, neutral plain background, soft natural light, understated"
     },
     {
       "id": "whitening-aftercare",
       "topic": "Looking after your smile after whitening",
-      "image": "Morning bathroom shelf with a soft toothbrush, a glass and white towels in natural light, calm and tidy",
-      "angle": "Simple everyday habits; advice from your dental team"
+      "image": "{person} smiling in a tidy, bright bathroom in the morning, holding a soft toothbrush, natural light, calm and fresh",
+      "angle": "Simple everyday habits; advice from your dental team",
+      "image_b": "{person} smiling at a bright kitchen window with a glass of water, morning light, calm and tidy"
     },
     {
       "id": "dentist-led",
       "topic": "Dentist-led, individually tailored care",
-      "image": "Abstract warm-toned composition of hands gently holding a small model of teeth, soft focus, caring tone, no faces",
-      "angle": "Why we listen before we recommend"
+      "image": "{person} smiling warmly and reassuringly in a bright modern dental practice, caring and trustworthy mood, soft focus background",
+      "angle": "Why we listen before we recommend",
+      "image_b": "{person} laughing warmly in a bright modern clinic waiting area, relaxed and at ease, wide shot, soft natural light"
     }
-  ]
+  ],
+  "image_styles": {
+    "A": "Soft natural daylight, clean modern premium editorial photography feel, warm neutral palette with fresh teal and white accents, shallow depth of field, calm and elegant. No text, no logos, no watermarks, no before/after split images, no cartoonish or glowing teeth, no clinical or scary imagery. No festive, holiday or party styling, no decorations, no costumes.",
+    "B": "Bright, airy, natural lifestyle photography, crisp and clean, cooler daylight tones, fresh white and soft teal palette, candid unposed feel, slightly wider framing, gentle contrast. No text, no logos, no watermarks, no before/after split images, no cartoonish or glowing teeth, no clinical or scary imagery. No festive, holiday or party styling, no decorations, no costumes."
+  },
+  "models": {
+    "_note": "Cloudflare model for each image. Override with the IMAGE_MODEL_A / IMAGE_MODEL_B settings.",
+    "A": "@cf/black-forest-labs/flux-2-klein-9b",
+    "B": "@cf/leonardo/lucid-origin"
+  }
 }

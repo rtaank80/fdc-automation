@@ -280,23 +280,26 @@ def _openai_image(prompt: str) -> bytes:
     return requests.get(item["url"], timeout=120).content
 
 
-def _cloudflare_image(prompt: str) -> bytes:
-    """Cloudflare Workers AI REST API. FLUX.2 models take multipart/form-data."""
+def _cloudflare_image(prompt: str, model: str) -> bytes:
+    """Cloudflare Workers AI REST API. FLUX.2 models take multipart/form-data; the others take JSON."""
     account = os.getenv("CLOUDFLARE_ACCOUNT_ID") or sys.exit("CLOUDFLARE_ACCOUNT_ID is not set.")
     token = os.getenv("CLOUDFLARE_API_TOKEN") or sys.exit("CLOUDFLARE_API_TOKEN is not set.")
-    model = os.getenv("IMAGE_MODEL", "@cf/black-forest-labs/flux-2-klein-9b")
     fields = {"prompt": prompt, "width": "1024", "height": "1024", "seed": str(random.randint(1, 2**31 - 1))}
     # Cloudflare sometimes answers with a temporary 5xx (error 3043 "Internal server error") or 429.
     # Retrying after a pause normally works, so try up to 5 times before giving up.
     waits = [15, 30, 60, 120]
     for attempt in range(len(waits) + 1):
         try:
-            r = requests.post(
-                f"https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/{model}",
-                headers={"Authorization": f"Bearer {token}"},
-                files={k: (None, v) for k, v in fields.items()},  # forces multipart/form-data
-                timeout=240,
-            )
+            url = f"https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/{model}"
+            headers = {"Authorization": f"Bearer {token}"}
+            if "flux-2" in model:
+                r = requests.post(url, headers=headers, timeout=240,
+                                  files={k: (None, v) for k, v in fields.items()})  # multipart/form-data
+            else:  # e.g. Leonardo Lucid Origin, FLUX.1 schnell: plain JSON
+                body = {"prompt": prompt, "seed": int(fields["seed"])}
+                if "flux-1" not in model:
+                    body.update(width=1024, height=1024)
+                r = requests.post(url, headers=headers, json=body, timeout=240)
         except (requests.Timeout, requests.ConnectionError) as e:
             r = None
             err = str(e)[:200]
@@ -370,15 +373,20 @@ def pick_people(cfg: dict, n: int, avoid=None) -> list[str | None]:
 
 def generate_image(
     cfg: dict, theme: dict, path: Path, dry_run: bool, variation: str = "", person: str | None = None,
-    label: str = "",
+    label: str = "", letter: str = "A",
 ) -> str:
-    scene = theme["image"].replace("{person}", person or "an adult")
-    if "{person}" in theme["image"]:
-        clothing = (cfg.get("people") or {}).get("clothing")
-        if clothing:
-            scene += f", {clothing}"
+    template = theme.get("image_b") if letter == "B" and theme.get("image_b") else theme["image"]
+    scene = template.replace("{person}", person or "an adult") if "{person}" in template else f"{person or 'An adult'}, {template}"
+    styles = cfg.get("image_styles") or {}
+    style = styles.get(letter) or styles.get("A") or cfg.get("image_style", "")
+    clothing = (cfg.get("people") or {}).get("clothing")
+    look = (cfg.get("people") or {}).get("look")
+    if clothing:
+        scene += f", {clothing}"
+    if look:
+        scene += f", {look}"
     prompt = (
-        f"{scene}. Topic: {theme['topic']}. Style: {cfg['image_style']} "
+        f"{scene}. Topic: {theme['topic']}. Style: {style} "
         "Square composition, leave natural breathing room. Realistic, tasteful, not stock-photo cliché. "
         "Any person is an authentic, respectful, natural-looking adult, never a caricature."
     )
@@ -391,12 +399,15 @@ def generate_image(
 
     provider = os.getenv("IMAGE_PROVIDER", "cloudflare").lower()
     if provider == "cloudflare":
-        raw = _cloudflare_image(prompt)
+        models = cfg.get("models") or {}
+        model = (os.getenv(f"IMAGE_MODEL_{letter}") or models.get(letter)
+                 or os.getenv("IMAGE_MODEL") or "@cf/black-forest-labs/flux-2-klein-9b")
+        raw = _cloudflare_image(prompt, model)
     elif provider == "openai":
         raw = _openai_image(prompt)
     else:
         sys.exit(f"Unknown IMAGE_PROVIDER '{provider}' (use 'cloudflare' or 'openai')")
-    log(f"Image generated with {provider}")
+    log(f"Image {letter} generated with {provider}" + (f" ({model})" if provider == "cloudflare" else ""))
     # Instagram only accepts JPEG for feed images.
     img = Image.open(io.BytesIO(raw)).convert("RGB")
     if img.size != (1080, 1080):
@@ -512,23 +523,28 @@ def cmd_generate(args: argparse.Namespace) -> None:
         for im in images:
             shutil.copyfile(prev_dir / im["file"], OUT / im["file"])
     else:
-        wants_person = "{person}" in theme["image"]
         prev_people = [im.get("person") for im in (prev or {}).get("images", [])]
-        people = pick_people(cfg, len(LETTERS), avoid=prev_people) if wants_person else [None] * len(LETTERS)
-        phrases = random.sample(VARIATIONS, len(LETTERS))
+        people = pick_people(cfg, len(LETTERS), avoid=prev_people)
+        regen = mode != "new"  # a regenerated image also gets a random twist so it differs from the old one
+        phrases = random.sample(VARIATIONS, len(LETTERS)) if regen else [""] * len(LETTERS)
 
-        def make(i: int) -> dict:
+        def make(i: int) -> dict | None:
             letter = LETTERS[i]
             fname = f"image-{letter.lower()}.jpg"
-            prompt = generate_image(cfg, theme, OUT / fname, args.dry_run, variation=phrases[i],
-                                    person=people[i], label=f"IMAGE {letter}")
-            return {"id": letter, "file": fname, "person": people[i], "prompt": prompt}
+            person = people[i]  # every image shows a person
+            log(f"Person in image {letter}: {person}")
+            try:
+                prompt = generate_image(cfg, theme, OUT / fname, args.dry_run, variation=phrases[i],
+                                        person=person, label=f"IMAGE {letter}", letter=letter)
+            except SystemExit as exc:  # one image failing should not lose the other
+                log(f"WARNING: image {letter} failed ({exc}); continuing without it.")
+                return None
+            return {"id": letter, "file": fname, "person": person, "prompt": prompt}
 
-        for letter, person in zip(LETTERS, people):
-            if person:
-                log(f"Person in image {letter}: {person}")
         with ThreadPoolExecutor(max_workers=len(LETTERS)) as pool:  # both images at the same time
-            images = list(pool.map(make, range(len(LETTERS))))
+            images = [im for im in pool.map(make, range(len(LETTERS))) if im]
+        if not images:
+            sys.exit("Neither image could be generated.")
 
     draft = {
         # Groups a scheduled run with its regenerations (the Worker's limits apply per group, not per week).
