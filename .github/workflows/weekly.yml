@@ -1,12 +1,12 @@
 name: Weekly Instagram draft
 
-# Every Tuesday this makes a draft (up to 3 captions + an image) and emails it to the approver.
+# Every day this makes a draft (up to 3 captions + an image) and emails it to the approver.
 # Nothing is posted until the approver clicks Approve in that email; that starts publish.yml.
 # The same workflow is started by the approval Worker when the approver asks for new captions/image.
 
 on:
   schedule:
-    - cron: "0 9 * * 2"   # Every Tuesday 09:00 UTC (10:00 UK summer time, 09:00 winter)
+    - cron: "0 10 * * *"   # Every day 10:00 UTC (10:00 UK in winter, 11:00 in summer time)
   workflow_dispatch:
     inputs:
       dry_run:
