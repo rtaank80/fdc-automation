@@ -20,6 +20,7 @@ import hashlib
 import hmac
 import html
 import json
+import re
 import smtplib
 import ssl
 from email.message import EmailMessage
@@ -57,17 +58,66 @@ def _expiry_text(exp: int) -> str:
     return when.strftime("%A %d %B at %H:%M")
 
 
-def _button(url: str, label: str, primary: bool = True) -> str:
+def _button(url: str, label: str, primary: bool = True, width: int = 552) -> str:
+    """A full-width button that also works in Outlook (VML) and has a thumb-sized tap area."""
     if primary:
         bg, fg, border = TEAL, "#ffffff", TEAL
     else:
         bg, fg, border = "#eef3f2", "#1b4a48", "#b9cfcc"
+    u, lab = _esc(url), _esc(label)
     return (
-        '<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:6px 0;"><tr>'
-        f'<td bgcolor="{bg}" style="border-radius:8px;">'
-        f'<a href="{_esc(url)}" target="_blank" style="display:inline-block;padding:13px 22px;'
-        f"font:600 15px Arial,Helvetica,sans-serif;color:{fg};text-decoration:none;border-radius:8px;"
-        f'border:1px solid {border};">{_esc(label)}</a></td></tr></table>'
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:5px 0;"><tr><td>'
+        "<!--[if mso]>"
+        f'<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" '
+        f'href="{u}" style="height:44px;v-text-anchor:middle;width:{width}px;" arcsize="18%" '
+        f'strokecolor="{border}" fillcolor="{bg}"><w:anchorlock/>'
+        f'<center style="color:{fg};font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:bold;">{lab}</center>'
+        "</v:roundrect><![endif]-->"
+        "<!--[if !mso]><!-- -->"
+        f'<a href="{u}" target="_blank" style="display:block;background:{bg};border:1px solid {border};'
+        f"border-radius:8px;color:{fg};font:600 15px/42px Arial,Helvetica,sans-serif;text-align:center;"
+        f'text-decoration:none;">{lab}</a>'
+        "<!--<![endif]-->"
+        "</td></tr></table>"
+    )
+
+
+def _weekday(draft: dict) -> str | None:
+    try:
+        from zoneinfo import ZoneInfo
+
+        when = dt.datetime.fromisoformat(draft["generated_at"]).astimezone(ZoneInfo("Europe/London"))
+        return when.strftime("%A")
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _caption_html(caption: str, cut: int = 125) -> str:
+    """The caption as Instagram shows it: hashtags in blue, and a marker where '... more' would cut it off."""
+    text = caption
+    if len(text) > cut:
+        i = text.rfind(" ", 0, cut)
+        i = i if i > 60 else cut
+        head, tail = text[:i], text[i:]
+    else:
+        head, tail = text, ""
+
+    def fmt(t: str) -> str:
+        t = _esc(t).replace("\n", "<br>")
+        return re.sub(r"(#\w+)", r'<span style="color:#00376b;">\1</span>', t)
+
+    marker = (
+        '<span style="display:inline-block;background:#efefef;color:#8e8e8e;font:11px Arial,Helvetica,sans-serif;'
+        'padding:1px 6px;border-radius:9px;">&hellip; more</span>'
+    )
+    return fmt(head) + (marker + fmt(tail) if tail else "")
+
+
+def _preheader(text: str) -> str:
+    pad = "&#847;&zwnj;&nbsp;" * 70  # stops the email body leaking into the inbox preview line
+    return (
+        '<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;'
+        f'color:#f3f5f4;opacity:0;">{_esc(text)}{pad}</div>'
     )
 
 
@@ -82,8 +132,9 @@ def build_message(
     draft_id: str,
     max_regens: int = 3,
     from_name: str = "FDC Instagram approvals",
+    account: str = "fdc.dental",
 ) -> tuple[EmailMessage, str, str]:
-    """Return (message, html, text). The html refers to the image as cid:postimage."""
+    """Return (message, html, text). The html refers to the images as cid:postimage-a, cid:postimage-b."""
     topic = draft.get("topic") or draft.get("theme", "this week's post")
     dry = bool(draft.get("dry_run"))
     exp = int(draft["expires_at"])
@@ -95,10 +146,10 @@ def build_message(
 
     cands = draft["candidates"]
     letters = sorted(images)
+    many = len(letters) > 1
     approve_links = {
         (c["number"], L): link("approve", c=c["number"], i=L, l=c["label"]) for c in cands for L in letters
     }
-    many = len(letters) > 1
     others = [
         ("captions", "Generate new captions (images are fine)" if many else "Generate new captions (image is fine)"),
         ("image", "Generate new images (captions are fine)" if many else "Generate a new image (captions are fine)"),
@@ -106,26 +157,62 @@ def build_message(
     ]
     other_links = {a: link(a) for a, _ in others}
     skip_link = link("skip")
+    n_cap = len(cands)
+    n_img = len(letters)
+    expiry = _expiry_text(exp)
+    summary = (
+        f"{n_cap} caption{'s' if n_cap != 1 else ''} &middot; {n_img} image{'s' if n_img != 1 else ''} "
+        f"&middot; link expires {_esc(expiry)}"
+    )
+    pre = f"{n_cap} caption{'s' if n_cap != 1 else ''} and {n_img} image{'s' if n_img != 1 else ''} waiting for your approval. Expires {expiry}."
 
     # ------------------------------------------------------------- html
+    half = 252
+    image_cells = "".join(
+        '<td width="50%" valign="top" style="padding:0 4px;">'
+        f'<div style="font:700 12px Arial,Helvetica,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:{TEAL};margin:0 0 6px;">'
+        f"{'Image ' + L if many else 'Image'}</div>"
+        f'<img src="cid:{CID}-{L.lower()}" width="{half if many else 552}" alt="Image {L}" '
+        'style="display:block;width:100%;height:auto;border-radius:10px;border:0;"></td>'
+        for L in letters
+    )
+    image_row = (
+        '<tr><td style="padding:14px 20px 0;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" '
+        f'border="0"><tr>{image_cells}</tr></table></td></tr>'
+    )
+
     cards = []
     for c in cands:
-        body = _esc(c["caption"]).replace("\n", "<br>")
-        cards.append(
-            '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" '
-            'style="margin:0 0 18px;border:1px solid #d9e2e0;border-radius:10px;"><tr><td style="padding:16px 18px;">'
-            f'<div style="font:700 13px Arial,Helvetica,sans-serif;letter-spacing:.04em;text-transform:uppercase;'
-            f'color:{TEAL};margin-bottom:8px;">Option {c["number"]} &middot; {_esc(c["label"])}</div>'
-            f'<div style="font:15px/1.55 Georgia,\'Times New Roman\',serif;color:#23302f;">{body}</div>'
-            f'<div style="font:12px Arial,Helvetica,sans-serif;color:#6b7b79;margin:10px 0 4px;">'
-            f'Image description: {_esc(c["alt_text"])}</div>'
-            + "".join(
-                _button(approve_links[(c["number"], L)],
-                        f"Approve option {c['number']} with image {L}" if many else f"Approve option {c['number']} and post")
-                for L in letters
+        btn_cells = "".join(
+            f'<td width="{100 // n_img}%" valign="top" style="padding:0 {4 if many else 0}px;">'
+            + _button(
+                approve_links[(c["number"], L)],
+                f"Post with image {L}" if many else "Approve and post",
+                width=(half if many else 516),
             )
-            +
-            "</td></tr></table>"
+            + "</td>"
+            for L in letters
+        )
+        cards.append(
+            '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 20px;">'
+            f'<tr><td style="font:700 12px Arial,Helvetica,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:{TEAL};padding:0 2px 6px;">'
+            f'Option {c["number"]} &middot; {_esc(c["label"])}</td></tr>'
+            '<tr><td style="border:1px solid #dbdbdb;border-radius:12px;background:#ffffff;">'
+            # mock Instagram post header
+            '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>'
+            f'<td width="52" style="padding:12px 0 8px 14px;"><table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr>'
+            f'<td width="34" height="34" align="center" bgcolor="{TEAL}" style="border-radius:17px;color:#ffffff;'
+            f'font:700 12px Arial,Helvetica,sans-serif;">FDC</td></tr></table></td>'
+            f'<td style="padding:12px 14px 8px 10px;font:600 14px Arial,Helvetica,sans-serif;color:#262626;">{_esc(account)}'
+            '<div style="font:400 11px Arial,Helvetica,sans-serif;color:#8e8e8e;">How this caption will look</div></td>'
+            "</tr></table>"
+            f'<div style="padding:2px 16px 14px;font:14px/1.5 Arial,Helvetica,sans-serif;color:#262626;">'
+            f'<span style="font-weight:600;">{_esc(account)}</span> {_caption_html(c["caption"])}</div>'
+            f'<div style="padding:0 16px 12px;font:11px/1.4 Arial,Helvetica,sans-serif;color:#8e8e8e;">'
+            f'Image description: {_esc(c["alt_text"])}</div>'
+            "</td></tr>"
+            f'<tr><td style="padding-top:8px;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>{btn_cells}</tr></table></td></tr>'
+            "</table>"
         )
 
     if left > 0:
@@ -138,38 +225,33 @@ def build_message(
         )
         regen_note = f"Regenerations left for this draft: 0 of {max_regens}."
 
-    image_rows = "".join(
-        '<tr><td style="padding:16px 24px 0;">'
-        + (f'<div style="font:700 13px Arial,Helvetica,sans-serif;letter-spacing:.04em;text-transform:uppercase;'
-           f'color:{TEAL};margin-bottom:6px;">Image {L}</div>' if many else "")
-        + f'<img src="cid:{CID}-{L.lower()}" width="552" alt="{_esc(cands[0]["alt_text"])}" '
-        'style="display:block;width:100%;max-width:552px;height:auto;border-radius:10px;"></td></tr>'
-        for L in letters
-    )
-
     banner = ""
     if dry:
         banner = (
             '<tr><td style="background:#fff4d6;padding:12px 24px;font:600 14px Arial,Helvetica,sans-serif;color:#6b4e00;">'
-            "TEST RUN: placeholder image, nothing will be posted to Instagram.</td></tr>"
+            "TEST RUN: placeholder images, nothing will be posted to Instagram.</td></tr>"
         )
 
     html_doc = f"""<!doctype html>
-<html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en-GB" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light">
+<!--[if mso]><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml><![endif]-->
 <title>Approve this Instagram post</title></head>
 <body style="margin:0;padding:0;background:#f3f5f4;">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#f3f5f4"><tr><td align="center" style="padding:24px 12px;">
-<table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" bgcolor="#ffffff" style="width:100%;max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;">
+{_preheader(pre)}
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#f3f5f4"><tr><td align="center" style="padding:20px 10px;">
+<table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" bgcolor="#ffffff" style="width:100%;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;">
 {banner}
-<tr><td style="padding:24px 24px 8px;">
+<tr><td style="padding:24px 24px 14px;">
 <div style="font:700 12px Arial,Helvetica,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:{TEAL};">FDC Instagram &middot; approval needed</div>
-<h1 style="font:700 22px/1.3 Georgia,'Times New Roman',serif;color:#23302f;margin:6px 0 4px;">{_esc(topic)}</h1>
-<p style="font:14px/1.5 Arial,Helvetica,sans-serif;color:#5c6b69;margin:0;">Pick the caption and image you want, or ask for something different. Nothing is posted unless you approve. These links work until {_esc(_expiry_text(exp))}.</p>
+<h1 style="font:700 24px/1.25 Georgia,'Times New Roman',serif;color:#23302f;margin:8px 0 10px;">{_esc(topic)}</h1>
+<div style="font:600 13px/1.4 Arial,Helvetica,sans-serif;color:#1b4a48;background:#eef3f2;border-radius:8px;padding:9px 12px;">{summary}</div>
 </td></tr>
-{image_rows}
-<tr><td style="padding:12px 24px 0;">{"".join(cards)}</td></tr>
-<tr><td style="padding:4px 24px 8px;">
+{image_row}
+<tr><td style="padding:20px 20px 0;">
+<div style="font:14px/1.5 Arial,Helvetica,sans-serif;color:#5c6b69;margin:0 4px 14px;">{'Choose a caption, then the image to post it with.' if many else 'Choose a caption to post.'} Nothing is posted unless you approve.</div>
+{"".join(cards)}</td></tr>
+<tr><td style="padding:0 24px 8px;">
 <div style="border-top:1px solid #d9e2e0;padding-top:16px;font:700 15px Arial,Helvetica,sans-serif;color:#23302f;">Not quite right?</div>
 {regen_html}
 <p style="font:12px Arial,Helvetica,sans-serif;color:#6b7b79;margin:4px 0 10px;">{_esc(regen_note)}</p>
@@ -184,9 +266,9 @@ Imagery is illustrative. Sent automatically by the FDC Instagram automation.
     # ------------------------------------------------------------- text
     lines = []
     if dry:
-        lines += ["TEST RUN: placeholder image, nothing will be posted.", ""]
+        lines += ["TEST RUN: placeholder images, nothing will be posted.", ""]
     lines += [f"Approve this Instagram post: {topic}", "",
-              f"Links work until {_expiry_text(exp)}. Each opens a confirmation page first.", ""]
+              f"{n_cap} captions, {n_img} images. Links work until {expiry}. Each opens a confirmation page first.", ""]
     for c in cands:
         lines += [f"--- Option {c['number']}: {c['label']} ---", c["caption"], "",
                   *[f"Approve option {c['number']} with image {L}: {approve_links[(c['number'], L)]}" for L in letters], ""]
@@ -203,7 +285,8 @@ Imagery is illustrative. Sent automatically by the FDC Instagram automation.
     # ------------------------------------------------------------- message
     msg = EmailMessage()
     prefix = "[TEST] " if dry else ""
-    msg["Subject"] = f"{prefix}Approve this Instagram post: {topic}"[:200]
+    day = _weekday(draft)
+    msg["Subject"] = f"{prefix}Approve {day + chr(39) + 's' if day else 'this'} post: {topic}"[:200]
     msg["From"] = formataddr((from_name, from_addr))
     msg["To"] = to_addr
     msg["Date"] = formatdate(localtime=False)
