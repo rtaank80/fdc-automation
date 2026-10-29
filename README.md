@@ -3,7 +3,7 @@
 Every week this prepares a post for **@fdc.dental**: an AI-generated cosmetic dentistry / whitening image and up to three caption options, with a link to the website. The approver gets an email, picks a caption with one button, and only then does it post.
 
 ```
-GitHub Actions cron (Tuesday 09:00 UTC)  "Weekly Instagram draft"
+GitHub Actions cron (daily, 10:00 UTC)  "Weekly Instagram draft"
   -> pick theme -> up to 3 captions (1 template, 2 Claude, 3 Cloudflare) + two images (A and B, made at the same time)
   -> email to the approver: both images, each caption with an Approve button per image, and
      "new captions", "new images", "new everything" and "skip" buttons
@@ -11,7 +11,7 @@ GitHub Actions cron (Tuesday 09:00 UTC)  "Weekly Instagram draft"
         Approve  -> "Publish approved post" workflow -> Instagram
         New ...  -> a fresh draft email (3 per draft at most)
         Skip     -> nothing is posted
-  -> no click at all = nothing is posted; links expire after 5 days; the next draft comes next Tuesday
+  -> no click at all = nothing is posted; links expire after 5 days; the next draft comes with the next scheduled run
 ```
 
 Cost is a few pence a week at most. GitHub Actions and the Cloudflare Worker are free at this volume.
@@ -93,7 +93,7 @@ Repo > Settings > Secrets and variables > Actions.
 1. Actions > *Weekly Instagram draft* > **Run workflow** with *Dry run* ticked. A `[TEST]` email arrives at the approver address (check spam the first time; mark it "not spam").
 2. Click **Approve option 1**, then **Confirm**. The *Publish approved post* workflow starts and logs `DRY RUN`. Test drafts can never post, have no limits (so you can click approve, skip and regenerate as often as you like) and don't affect real drafts.
 3. When happy, run the first draft for real (*Dry run* unticked), approve a caption, and check @fdc.dental.
-4. After that it runs by itself every Tuesday. Disable it any time under Actions > the workflow > **...** > Disable workflow.
+4. After that it runs by itself every day at 10:00 UTC. Disable it any time under Actions > the workflow > **...** > Disable workflow.
 
 ## Using the email
 - **Approve option N with image A / image B**: one button per image under each caption; opens a confirmation page; **Confirm** starts the post (usually live within a couple of minutes).
