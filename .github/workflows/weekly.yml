@@ -6,7 +6,7 @@ name: Weekly Instagram draft
 
 on:
   schedule:
-    - cron: "0 10 * * *"   # Every day 10:00 UTC (10:00 UK in winter, 11:00 in summer time)
+    - cron: "23 10 * * *"   # Every day 10:00 UTC (10:00 UK in winter, 11:00 in summer time)
   workflow_dispatch:
     inputs:
       dry_run:
