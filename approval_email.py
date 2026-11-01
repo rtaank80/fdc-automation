@@ -103,8 +103,13 @@ def _caption_html(caption: str, cut: int = 125) -> str:
         head, tail = text, ""
 
     def fmt(t: str) -> str:
-        t = _esc(t).replace("\n", "<br>")
-        return re.sub(r"(#\w+)", r'<span style="color:#00376b;">\1</span>', t)
+        # Find hashtags in the raw text, then escape each piece. Highlighting after escaping would
+        # also match the "#x27" inside "&#x27;" (an escaped apostrophe) and break it.
+        out = []
+        for part in re.split(r"(#\w+)", t):
+            piece = _esc(part).replace("\n", "<br>")
+            out.append(f'<span style="color:#00376b;">{piece}</span>' if re.fullmatch(r"#\w+", part) else piece)
+        return "".join(out)
 
     marker = (
         '<span style="display:inline-block;background:#efefef;color:#8e8e8e;font:11px Arial,Helvetica,sans-serif;'
