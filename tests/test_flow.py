@@ -123,3 +123,7 @@ before=len(posts)
 try: run_publish(exp, 1)
 except SystemExit as e: assert "expired" in str(e)
 assert len(posts)==before; print("9 ok: expired draft refuses to post")
+h = approval_email._caption_html("For life's occasions & more. #Smile #FDC\nNext line")
+assert "life&#x27;s" in h and "#x27</span>" not in h and "&amp; more" in h, h
+assert h.count('<span style="color:#00376b;">#') == 2 and "<br>Next line" in h, h
+print("10 ok: apostrophes and & show correctly in the email; hashtags still highlighted")
