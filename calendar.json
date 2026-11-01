@@ -1,0 +1,195 @@
+{
+  "_note": "Seasonal themes mixed into the normal rotation. Each month lists themes in the same format as themes.json. Optional per theme: \"days\": [first,last] limits it to those days of the month; \"pin\": true makes it take every post in its days. Dates of awareness months and days change, so check them each year. Keep wording factual: no results guarantees or claims.",
+  "settings": {
+    "seasonal_every": 3,
+    "rotation": "daily"
+  },
+  "months": {
+    "1": [
+      {
+        "id": "new-year-new-smile",
+        "topic": "A fresh start for your smile",
+        "angle": "New-year goals: a confident smile is something you can plan with your dentist, step by step",
+        "image": "{person} smiling broadly in bright morning light beside a window, fresh and optimistic, clean uncluttered background",
+        "image_b": "{person} laughing in a bright winter park in soft cold sunshine, relaxed and candid"
+      }
+    ],
+    "2": [
+      {
+        "id": "valentines-smile",
+        "topic": "Smile for the moments that matter",
+        "angle": "Feeling confident for the occasions you care about, with a plan tailored to you",
+        "image": "{person} smiling warmly in soft pink and warm neutral tones, intimate daylight portrait",
+        "image_b": "{person} laughing over a coffee at a cafe table, relaxed and candid",
+        "days": [
+          1,
+          14
+        ]
+      },
+      {
+        "id": "winter-brighten",
+        "topic": "Brighten the winter months",
+        "angle": "A consultation is a calm, no-pressure way to find out what is possible for your smile",
+        "image": "{person} smiling broadly in soft winter window light, calm and bright",
+        "image_b": "{person} laughing on a bright cold-weather walk, candid and natural"
+      }
+    ],
+    "3": [
+      {
+        "id": "world-oral-health-day",
+        "topic": "World Oral Health Day: looking after your smile",
+        "angle": "Healthy teeth and gums are the best foundation for any cosmetic treatment",
+        "image": "{person} smiling broadly in a bright bathroom holding a soft toothbrush, fresh and clean",
+        "image_b": "{person} laughing in a sunny kitchen, bright morning light, candid lifestyle photograph",
+        "days": [
+          18,
+          20
+        ],
+        "pin": true
+      },
+      {
+        "id": "spring-refresh",
+        "topic": "A spring refresh for your smile",
+        "angle": "Spring is a natural time to start a plan that suits you and your calendar",
+        "image": "{person} smiling broadly outdoors among spring blossom, soft daylight",
+        "image_b": "{person} laughing in a sunny park in fresh spring light, candid"
+      }
+    ],
+    "4": [
+      {
+        "id": "planning-big-day",
+        "topic": "Planning ahead for a big day",
+        "angle": "Weddings, reunions and milestones are easier to prepare for when treatment is planned in good time",
+        "image": "{person} with a bright easy smile in soft natural light, elegant and understated, light neutral background",
+        "image_b": "{person} laughing at a sunny garden gathering, candid and relaxed"
+      }
+    ],
+    "5": [
+      {
+        "id": "national-smile-month",
+        "topic": "National Smile Month: share your smile",
+        "angle": "A smile is one of the simplest things we share, and looking after it is easier with regular check-ups",
+        "image": "{person} smiling broadly outdoors in sunshine, joyful and bright",
+        "image_b": "{person} laughing with warmth in a bright airy space, candid",
+        "days": [
+          15,
+          31
+        ]
+      },
+      {
+        "id": "summer-ready",
+        "topic": "Getting summer-ready",
+        "angle": "Starting a plan in spring means you can feel ready for summer events and holidays",
+        "image": "{person} smiling broadly in warm early-summer light, relaxed, natural",
+        "image_b": "{person} laughing on a sunny terrace, candid, bright"
+      }
+    ],
+    "6": [
+      {
+        "id": "smile-month-june",
+        "topic": "National Smile Month: share your smile",
+        "angle": "A smile is one of the simplest things we share, and looking after it is easier with regular check-ups",
+        "image": "{person} smiling broadly outdoors in summer sunshine, joyful and bright",
+        "image_b": "{person} laughing in a bright garden, candid and warm",
+        "days": [
+          1,
+          15
+        ]
+      },
+      {
+        "id": "summer-events",
+        "topic": "Smile for the summer events",
+        "angle": "Summer brings weddings, parties and photographs, and a consultation is a good place to begin planning",
+        "image": "{person} smiling confidently in soft golden-hour light, elegant and understated",
+        "image_b": "{person} laughing at a relaxed summer gathering outdoors, candid"
+      }
+    ],
+    "7": [
+      {
+        "id": "holiday-photos",
+        "topic": "Smile for the holiday photos",
+        "angle": "Feeling comfortable in photographs is a good reason to look at your options",
+        "image": "{person} smiling broadly outdoors in bright summer light, relaxed and happy",
+        "image_b": "{person} laughing in a seaside town street in sunshine, candid"
+      }
+    ],
+    "8": [
+      {
+        "id": "time-for-you",
+        "topic": "Make a little time for yourself",
+        "angle": "A consultation is a calm conversation about what you would like, with no pressure to decide",
+        "image": "{person} smiling serenely in soft morning light by a window, calm and bright",
+        "image_b": "{person} laughing while relaxing in a sunny garden, candid"
+      }
+    ],
+    "9": [
+      {
+        "id": "back-to-routine",
+        "topic": "Back to routine, and a good time to plan",
+        "angle": "September is a natural point to book that consultation you have been meaning to",
+        "image": "{person} smiling broadly in crisp early-autumn light, fresh and confident",
+        "image_b": "{person} laughing on a city street on a bright autumn morning, candid"
+      }
+    ],
+    "10": [
+      {
+        "id": "autumn-reset",
+        "topic": "An autumn reset for your smile",
+        "angle": "Starting treatment in autumn can mean you feel ready by the new year",
+        "image": "{person} smiling broadly in soft autumn daylight, calm and confident",
+        "image_b": "{person} laughing in a bright cafe window seat on a crisp day, candid"
+      },
+      {
+        "id": "relaxed-visits",
+        "topic": "Dental visits without the worry",
+        "angle": "A friendly team, time to ask questions and a calm approach",
+        "image": "{person} smiling warmly and relaxed in a calm modern dental practice reception, soft lighting",
+        "image_b": "{person} laughing gently in a bright, welcoming waiting area, candid"
+      }
+    ],
+    "11": [
+      {
+        "id": "mouth-cancer-action-month",
+        "topic": "Mouth Cancer Action Month: keep up your check-ups",
+        "angle": "Regular dental check-ups are a good habit, and a reminder to book yours is always welcome",
+        "image": "{person} smiling warmly and confidently in soft natural light, calm and reassuring mood",
+        "image_b": "{person} laughing gently in a bright welcoming space, candid"
+      },
+      {
+        "id": "party-season-planning",
+        "topic": "Planning your smile for the party season",
+        "angle": "Treatments take time, so planning early helps you feel ready for the occasions you care about",
+        "image": "{person} smiling broadly in a smart dark top in soft evening-toned daylight, elegant, no decorations",
+        "image_b": "{person} laughing warmly in a bright restaurant window seat, candid, no decorations",
+        "days": [
+          1,
+          30
+        ]
+      }
+    ],
+    "12": [
+      {
+        "id": "party-season-smile",
+        "topic": "Smile ready for the party season",
+        "angle": "A simple, tailored plan can help you feel comfortable at the events on your calendar",
+        "image": "{person} smiling broadly in a smart dark top in soft evening-toned daylight, elegant, no decorations",
+        "image_b": "{person} laughing warmly with a coffee in a bright cafe, candid, no decorations",
+        "days": [
+          1,
+          20
+        ]
+      },
+      {
+        "id": "new-year-planning",
+        "topic": "Planning your smile for the new year",
+        "angle": "The new year is a good time to start a plan, and booking a consultation now gets you ahead",
+        "image": "{person} smiling confidently in soft winter window light, fresh and optimistic",
+        "image_b": "{person} laughing on a bright crisp winter walk, candid",
+        "days": [
+          21,
+          31
+        ]
+      }
+    ]
+  }
+}

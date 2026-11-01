@@ -6,7 +6,7 @@ name: Weekly Instagram draft
 
 on:
   schedule:
-    - cron: "23 10 * * *"   # Every day 10:00 UTC (10:00 UK in winter, 11:00 in summer time)
+    - cron: "23 10 * * *"   # Every day 10:23 UTC (off the hour, which GitHub runs on time more often)
   workflow_dispatch:
     inputs:
       dry_run:
@@ -27,7 +27,7 @@ on:
         required: false
         default: "0"
       theme_id:
-        description: "Force a theme id from themes.json (optional)"
+        description: "Force a theme id from themes.json or calendar.json (optional)"
         required: false
       refresh_token:
         description: "Also refresh the Instagram token now"

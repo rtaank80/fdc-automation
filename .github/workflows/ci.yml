@@ -1,0 +1,27 @@
+name: Tests
+
+# Runs the offline tests on every push and pull request. No secrets are used and nothing is posted.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - run: pip install -r requirements.txt
+      - run: python tests/test_content.py
+      - run: python tests/test_flow.py
+      - run: node tests/worker.test.mjs

@@ -1,0 +1,72 @@
+name: Deploy approval Worker
+
+# Uploads worker/worker.js to the Cloudflare Worker whenever it changes on main (or when started by hand).
+# The Worker's existing secrets, text settings and KV binding are kept as they are (keep_bindings), so only the code changes.
+#
+# Needs, in GitHub:
+#   secret   CLOUDFLARE_ACCOUNT_ID    (already used for Workers AI)
+#   secret   CLOUDFLARE_DEPLOY_TOKEN  a Cloudflare API token with Account > Workers Scripts > Edit (not the Workers AI token)
+#   variable APPROVAL_BASE_URL        the Worker's address, e.g. https://name.subdomain.workers.dev (already set)
+#   variable CLOUDFLARE_WORKER_NAME   optional; the Worker's name if it differs from the first part of APPROVAL_BASE_URL
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - worker/worker.js
+      - .github/workflows/deploy-worker.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-worker
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check Worker code
+        run: cp worker/worker.js /tmp/worker.mjs && node --check /tmp/worker.mjs
+      - name: Upload to Cloudflare
+        env:
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}
+          BASE_URL: ${{ vars.APPROVAL_BASE_URL }}
+          NAME_OVERRIDE: ${{ vars.CLOUDFLARE_WORKER_NAME }}
+        run: |
+          if [ -z "$TOKEN" ] || [ -z "$ACCOUNT" ]; then
+            echo "::warning::Not deploying: add the secrets CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_DEPLOY_TOKEN (see the comments in this file). The Cloudflare copy of the Worker was NOT updated."
+            exit 0
+          fi
+          NAME="${NAME_OVERRIDE:-$(echo "$BASE_URL" | sed -E 's#^https?://##; s#[./:].*$##')}"
+          if [ -z "$NAME" ]; then echo "::error::Cannot work out the Worker name. Set the variable CLOUDFLARE_WORKER_NAME."; exit 1; fi
+          echo "Deploying Worker '$NAME'"
+          cp worker/worker.js /tmp/worker.js
+          META='{"main_module":"worker.js","compatibility_date":"2025-09-01","keep_bindings":["secret_text","plain_text","json","kv_namespace"]}'
+          code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" -X PUT \
+            "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}/workers/scripts/${NAME}" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -F "metadata=${META};type=application/json" \
+            -F "worker.js=@/tmp/worker.js;type=application/javascript+module;filename=worker.js")
+          if [ "$code" != "200" ]; then
+            echo "::error::Cloudflare answered HTTP $code"; head -c 600 /tmp/resp.json; echo; exit 1
+          fi
+          python3 -c "import json;d=json.load(open('/tmp/resp.json'));assert d.get('success'),d" || { echo "::error::Cloudflare did not report success"; head -c 600 /tmp/resp.json; exit 1; }
+          echo "Uploaded."
+      - name: Check the Worker answers
+        env:
+          BASE_URL: ${{ vars.APPROVAL_BASE_URL }}
+          TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}
+        run: |
+          [ -z "$TOKEN" ] && exit 0
+          sleep 5
+          for i in 1 2 3 4 5; do
+            if curl -fsS "$BASE_URL/" | grep -q "approval service is running"; then echo "Worker is running."; exit 0; fi
+            sleep 6
+          done
+          echo "::error::The Worker did not answer correctly after the deploy. Open the Worker in the Cloudflare dashboard > Deployments and roll back to the previous version."
+          exit 1

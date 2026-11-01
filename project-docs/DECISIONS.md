@@ -1,0 +1,35 @@
+# Decisions log
+
+What was decided while building this, and why. Newest decisions are lower in each group. Update this file when a decision changes.
+
+## Platform
+- **Instagram API with Instagram Login, no Facebook Page.** The practice has a business Instagram account (Fdc.dental) and no Facebook Page. Posts go out as that account. The 60-day token is refreshed automatically.
+- **Public GitHub repo.** Instagram must fetch images from a public URL and Pages hosts the privacy policy Meta requires. Hence no secrets or personal data in the repo.
+- **Images stored in the repo (`images/`)**, not an image host such as imgbb.
+
+## Content
+- **Image models on Cloudflare Workers AI** (pennies a week). Image A uses FLUX.2 klein 9B. Image B uses Leonardo Lucid Origin because the two FLUX.2 variants looked too similar when used together. Models can be overridden with `IMAGE_MODEL_A` and `IMAGE_MODEL_B`.
+- **Two images per draft with different prompts, styles, models and people**, so the approver has a real choice.
+- **Every image shows a smiling person**, because the practice wants people, not objects. The person mix is 80% white, 10% Black, 10% Asian, with random gender and age, because the models otherwise favour one look. The two people differ by age band, and a regenerated image never reuses the previous people.
+- **"Bright, healthy-looking" teeth, not "perfect".** UK dental advertising rules discourage overpromising. Prompts ask for healthy, even, bright teeth and clear skin, and block cartoonish or glowing teeth. Captions keep "Imagery is illustrative. Individual results vary."
+- **Ordinary clothing, no festive styling.** Early images all looked festive because the `events-season` theme asked for festive lights; it was rewritten and the shared style now blocks festive or party looks. Seasonal content is chosen deliberately through `calendar.json`.
+- **Three caption options**: 1 default template, 2 Claude (only if `ANTHROPIC_API_KEY` is set), 3 Cloudflare Llama 3.3 70B. All pass the compliance filter.
+- **Seasonal calendar** mixed into the rotation (one post in three by default), with date windows and pinned awareness days. Normal themes rotate daily because the schedule is daily.
+
+## Approval
+- **Approval by HTML email**, replacing the GitHub environment approval. One approver. Sent through the practice's UK2 mailbox over SMTP, no Cloudflare email service needed.
+- **Nothing posts unless approved.** If nobody approves, the draft expires after 5 days and the next scheduled draft is a separate one.
+- **Signed single-use links with a confirmation page.** Mail scanners open links automatically, so a GET only shows a page and the action needs a POST confirm.
+- **Limits per draft, not per week.** One approve or skip per draft (so two Approve buttons cannot post twice) and three regenerations per draft. The owner controls frequency from the schedule line in `weekly.yml`.
+- **Test drafts can never post** and have their own state, so testing never blocks a real draft.
+- **Email design**: summary line, side-by-side images, Instagram-style caption previews with a marker where "more" cuts off, two buttons per caption (image A or B), Outlook-safe buttons, inbox preview line, subject `Approve <weekday>'s post: <topic>`. Branding and logo were deliberately dropped.
+- **Caption editing in the email** was deferred.
+
+## Deployment
+- **The Worker is deployed from GitHub** by `deploy-worker.yml` using a separate Cloudflare API token stored as a GitHub secret. The upload uses `keep_bindings` so the dashboard secrets, text settings and KV binding are not overwritten. A separate token (Workers Scripts edit only) is used rather than widening the Workers AI token.
+
+## Schedule
+- **Daily draft** at `23 10 * * *` UTC. The minute is off the hour because GitHub delays jobs at the top of the hour (a 10:00 run once started at about 16:00). A Cloudflare Cron Trigger is the planned fix and would also keep the time at 10:00 UK all year.
+
+## Privacy
+- The privacy policy page is `docs/privacy.html`. It mentions Cloudflare, the email provider, the approver email, 7-day draft retention and link expiry. Update it if data handling changes.

@@ -61,7 +61,42 @@ def log(msg: str) -> None:
 
 
 def load_config() -> dict:
-    return json.loads((ROOT / "themes.json").read_text(encoding="utf-8"))
+    cfg = json.loads((ROOT / "themes.json").read_text(encoding="utf-8"))
+    cal = ROOT / "calendar.json"  # optional: seasonal themes by month
+    cfg["calendar"] = json.loads(cal.read_text(encoding="utf-8")) if cal.exists() else {}
+    return cfg
+
+
+def london_today() -> dt.date:
+    try:
+        from zoneinfo import ZoneInfo
+
+        return dt.datetime.now(ZoneInfo("Europe/London")).date()
+    except Exception:  # noqa: BLE001
+        return dt.date.today()
+
+
+def seasonal_themes(cfg: dict, today: dt.date) -> list[dict]:
+    """Seasonal themes that apply on this date (right month, and inside their day window if they have one)."""
+    entries = ((cfg.get("calendar") or {}).get("months") or {}).get(str(today.month), [])
+    out = []
+    for t in entries:
+        lo, hi = (t.get("days") or [1, 31])
+        if lo <= today.day <= hi:
+            out.append(t)
+    return out
+
+
+def find_theme(cfg: dict, theme_id: str) -> dict | None:
+    """A theme by id, from the normal list or any month of the seasonal calendar."""
+    for t in cfg["themes"]:
+        if t["id"] == theme_id:
+            return t
+    for entries in ((cfg.get("calendar") or {}).get("months") or {}).values():
+        for t in entries:
+            if t["id"] == theme_id:
+                return t
+    return None
 
 
 def iso_week(today: dt.date | None = None) -> str:
@@ -70,20 +105,35 @@ def iso_week(today: dt.date | None = None) -> str:
 
 
 def pick_theme(cfg: dict, today: dt.date | None = None) -> dict:
-    """Rotate through themes by ISO week, or force one with THEME_ID."""
+    """Choose today's theme, or force one with THEME_ID.
+
+    Normally the next theme from themes.json. Every Nth post (settings.seasonal_every in calendar.json) is a
+    seasonal theme for the current month instead, and a pinned seasonal theme takes every post in its days.
+    """
     forced = os.getenv("THEME_ID")
-    themes = cfg["themes"]
     if forced:
-        for t in themes:
-            if t["id"] == forced:
-                return t
-        sys.exit(f"THEME_ID '{forced}' not found in themes.json")
-    today = today or dt.date.today()
-    year, week, _ = today.isocalendar()
-    return themes[(year * 53 + week) % len(themes)]
+        found = find_theme(cfg, forced)
+        if found:
+            return found
+        sys.exit(f"THEME_ID '{forced}' not found in themes.json or calendar.json")
+    today = today or london_today()
+    settings = (cfg.get("calendar") or {}).get("settings") or {}
+    n = int(settings.get("seasonal_every", 0) or 0)
+    if settings.get("rotation", "daily") == "weekly":
+        year, week, _ = today.isocalendar()
+        unit = year * 53 + week
+    else:
+        unit = today.toordinal()
+    seasonal = seasonal_themes(cfg, today)
+    pinned = [t for t in seasonal if t.get("pin")]
+    if pinned:
+        return pinned[0]
+    if seasonal and n > 0 and unit % n == 0:
+        return seasonal[(unit // n) % len(seasonal)]
+    regular = unit - (unit // n if n > 0 else 0)  # counts only the days that are not seasonal ones
+    return cfg["themes"][regular % len(cfg["themes"])]
 
 
-# ---------------------------------------------------------------- caption
 def fallback_caption(cfg: dict, theme: dict) -> dict:
     b = cfg["brand"]
     caption = (
@@ -503,9 +553,9 @@ def cmd_generate(args: argparse.Namespace) -> None:
     else:
         prev_id = os.getenv("PREV_RUN_ID") or sys.exit("This MODE needs PREV_RUN_ID (run ID of the draft being redone).")
         prev = fetch_draft(prev_id, prev_dir)
-        theme = next((t for t in cfg["themes"] if t["id"] == prev["theme"]), None)
+        theme = find_theme(cfg, prev["theme"])
         if theme is None:
-            sys.exit(f"Theme '{prev['theme']}' is no longer in themes.json")
+            sys.exit(f"Theme '{prev['theme']}' is no longer in themes.json or calendar.json")
     log(f"Mode '{mode}', theme: {theme['id']} ({theme['topic']})")
 
     if mode in ("new", "captions", "all"):

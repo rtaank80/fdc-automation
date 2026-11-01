@@ -64,9 +64,9 @@ Repo > Settings > Secrets and variables > Actions.
 | `ANTHROPIC_API_KEY` | optional |
 | `IG_ACCESS_TOKEN` | from step 2 |
 | `GH_PAT` | a fine-grained token with **Secrets: Read and write** on this repo; lets the weekly job save the refreshed Instagram token (without it the token must be replaced by hand before day 60) |
-| `SMTP_USER` | the full sending mailbox address, e.g. `fdc-dental.instagram@family-dental-centre.co.uk` |
+| `SMTP_USER` | the full sending mailbox address, e.g. `sender@your-domain.example` |
 | `SMTP_PASSWORD` | that mailbox's password |
-| `APPROVER_EMAIL` | who receives the weekly draft, e.g. `ritesh.taank@yahoo.com` |
+| `APPROVER_EMAIL` | who receives the weekly draft, e.g. `approver@example.com` |
 | `LINK_SECRET` | a long random string (a password manager, or `openssl rand -hex 32`). **Must be identical** to the Worker's `LINK_SECRET` |
 
 **Variables** (Variables tab):
@@ -104,6 +104,7 @@ Repo > Settings > Secrets and variables > Actions.
 
 ## Customising
 - `themes.json`: brand tone, image style and the 12 rotating topics. Edit freely, or force one with `THEME_ID`.
+- `calendar.json`: seasonal themes by month (new). The normal 12 themes in `themes.json` rotate by day. Every Nth post (`seasonal_every`, default 3; set 0 to turn seasonal posts off) is instead a seasonal theme for the current month, taking turns if the month has more than one. Each seasonal theme has the same fields as a normal one (`id`, `topic`, `angle`, `image`, `image_b`), plus optional `"days": [first, last]` to limit it to part of the month (for example Smile Month from 15 May) and `"pin": true` to make it take every post in those days (for example World Oral Health Day). `"rotation": "weekly"` makes the normal themes change weekly instead of daily. The dates of awareness days and months change, so check them each year. You can force any theme, normal or seasonal, with the `theme_id` box when running the workflow by hand.
 - **Image A and image B:** they differ in three ways so they never look alike. Each uses a different model (A: FLUX.2 klein 9B, B: Leonardo Lucid Origin; set in `models` in `themes.json`, or override with the repository variables `IMAGE_MODEL_A` and `IMAGE_MODEL_B`), a different scene (every theme has an `image` for A and an `image_b` for B) and a different look (`image_styles` A and B in `themes.json`). If one model fails, the email goes out with the image that worked. Other Cloudflare models that fit image B without code changes are `@cf/black-forest-labs/flux-1-schnell` and `@cf/leonardo/phoenix-1.0`; I could only confirm their input fields, so check the first result.
 - **Who appears in the images:** every image shows a person, smiling or laughing, and the script picks a different random person for image A and image B (never the same person, never the same age band, and never the people in the draft being replaced), such as "a woman in her 50s of Indian heritage". The mix is set in the `people` section of `themes.json`: each entry in `groups` has a `weight` (currently white 80, Black 10, Asian 10), plus `genders`, `ages`, a `clothing` phrase (ordinary everyday clothes) and a `look` phrase (smiling, bright healthy-looking teeth, healthy skin) added to every prompt. Change the weights to change the mix. A regenerated image never repeats the previous people. The chosen people are saved in the draft and shown in the run log (`Person in image A: ...`).
 - Schedule: edit the `cron` line in `.github/workflows/weekly.yml` (times are UTC). Add a second `- cron:` line for a second draft in the week; each run is approved separately.
