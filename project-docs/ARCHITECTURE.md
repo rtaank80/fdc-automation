@@ -3,7 +3,8 @@
 ## Flow
 ```mermaid
 flowchart TD
-  S[GitHub schedule: daily 10:23 UTC] --> G[weekly.yml: generate]
+  CR[Worker Cron Trigger: daily 10:00 UK] --> G[weekly.yml: generate]
+  S[GitHub schedule 10:23 UTC: backup, skips if Cloudflare ran] -.-> G
   G --> T[pick theme: normal rotation or seasonal]
   T --> C[captions: 1 template, 2 Claude if key set, 3 Cloudflare Llama]
   T --> I[images A and B in parallel: FLUX.2 klein 9B and Lucid Origin]
@@ -21,9 +22,9 @@ flowchart TD
 ## Components
 - **`post_weekly.py generate`** (`weekly.yml`): chooses the theme, builds captions that pass the compliance check, generates image A and image B concurrently (if one fails the draft continues with the other), writes `out/draft.json`, `out/draft.md`, `out/image-a.jpg`, `out/image-b.jpg`, uploads them as the `draft` artifact and sends the email. Modes via env `MODE`: `new`, `captions` (keep images), `image` (keep captions), `all`. Regenerations pass `PREV_RUN_ID` and `REGENS_USED`.
 - **`approval_email.py`**: HTML and plain-text email with inline images (CIDs `postimage-a`, `postimage-b`), Instagram-style caption previews, "Post with image A / B" buttons per caption, regeneration and skip buttons, Outlook-safe buttons, inbox preview line. Subject: `Approve <weekday>'s post: <topic>`.
-- **`worker/worker.js`**: `GET /a/<token>` shows a confirmation page and changes nothing; `POST /c/<token>` verifies the signature and expiry, applies the per-draft rules in KV, then dispatches `publish.yml` or `weekly.yml` through the GitHub API.
+- **`worker/worker.js`**: `GET /a/<token>` shows a confirmation page and changes nothing; `POST /c/<token>` verifies the signature and expiry, applies the per-draft rules in KV, then dispatches `publish.yml` or `weekly.yml` through the GitHub API. Its `scheduled` handler (Cron Trigger `0,30 9,10 * * *` UTC) dispatches `weekly.yml` with `mode=new`, `refresh_token=true`, `source=cloudflare` once per UK day at the UK hour `DRAFT_UK_HOUR` (default 10); `DAILY_DRAFT=test` makes it a TEST draft and `off` stops it.
 - **`post_weekly.py publish`** (`publish.yml`): downloads the draft artifact by run id, refuses expired or test drafts and unknown option or image, hosts the chosen image in `images/`, posts through `graph.instagram.com` and logs the media id.
-- **`post_weekly.py refresh`**: exchanges the 60-day Instagram token for a fresh one and saves it back to the `IG_ACCESS_TOKEN` secret (needs `GH_PAT`). It runs as the `refresh-token` job on every scheduled run.
+- **`post_weekly.py refresh`**: exchanges the 60-day Instagram token for a fresh one and saves it back to the `IG_ACCESS_TOKEN` secret (needs `GH_PAT`). It runs as the `refresh-token` job on every daily draft (Cloudflare-started or GitHub backup).
 
 ## Link tokens
 `token = base64url(JSON payload) + "." + base64url(HMAC-SHA256(LINK_SECRET, base64url(JSON payload)))`

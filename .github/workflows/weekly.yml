@@ -3,10 +3,22 @@ name: Weekly Instagram draft
 # Every day this makes a draft (up to 3 captions + an image) and emails it to the approver.
 # Nothing is posted until the approver clicks Approve in that email; that starts publish.yml.
 # The same workflow is started by the approval Worker when the approver asks for new captions/image.
+#
+# The daily draft is started by the Worker's Cloudflare Cron Trigger at 10:00 UK time (see worker/worker.js),
+# because GitHub's own schedule runs hours late or not at all. The GitHub schedule below is kept as a backup:
+# it only makes a draft if no Cloudflare-started draft has run (or is running) today.
+
+run-name: >-
+  ${{ inputs.source == 'cloudflare' && 'Daily draft (Cloudflare schedule)'
+  || inputs.source == 'cloudflare-test' && 'Daily draft (Cloudflare schedule, TEST)'
+  || github.event_name == 'schedule' && 'Daily draft (GitHub backup schedule)'
+  || inputs.mode && inputs.mode != 'new' && format('Regeneration ({0})', inputs.mode)
+  || inputs.dry_run && 'Manual draft (TEST)'
+  || 'Manual draft (live)' }}
 
 on:
   schedule:
-    - cron: "23 10 * * *"   # Every day 10:23 UTC (off the hour, which GitHub runs on time more often)
+    - cron: "23 10 * * *"   # Backup only, 10:23 UTC; skipped when the Cloudflare draft already ran today
   workflow_dispatch:
     inputs:
       dry_run:
@@ -33,13 +45,43 @@ on:
         description: "Also refresh the Instagram token now"
         type: boolean
         default: false
+      source:
+        description: "Who started this run (set by the Worker's daily schedule; leave blank)"
+        required: false
+        default: ""
 
 permissions:
   contents: write   # lets the draft stage read the repo; publish.yml uses write to save the post image
   actions: read     # lets a regeneration download the earlier draft
 
 jobs:
+  # Backup schedule only: stand down if the Cloudflare daily draft has already run or is running today (UTC).
+  # If this check itself fails, the backup draft goes ahead (it still needs an approval click to post).
+  backup-check:
+    if: ${{ github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          today=$(date -u +%F)
+          n=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/weekly.yml/runs?created=%3E%3D$today&per_page=100" \
+            --jq '[.workflow_runs[] | select(.display_title == "Daily draft (Cloudflare schedule)")
+                   | select(.conclusion != "failure" and .conclusion != "cancelled" and .conclusion != "timed_out")] | length')
+          if [ "${n:-0}" -gt 0 ]; then
+            echo "The Cloudflare daily draft already ran today; the GitHub backup does nothing."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::No Cloudflare daily draft found today; the GitHub backup schedule is making the draft."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
   generate:
+    needs: backup-check
+    if: ${{ !cancelled() && needs.backup-check.outputs.skip != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -88,7 +130,8 @@ jobs:
   refresh-token:
     # Instagram tokens last 60 days; refreshing weekly keeps it alive forever.
     # Needs a GitHub personal access token (secret GH_PAT) that can write repo secrets.
-    if: ${{ github.event_name == 'schedule' || inputs.refresh_token }}
+    needs: backup-check
+    if: ${{ !cancelled() && needs.backup-check.outputs.skip != 'true' && (github.event_name == 'schedule' || inputs.refresh_token) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

@@ -18,6 +18,14 @@
 //   GH_REF       (text, optional) branch holding the workflows, default "main"
 //   MAX_REGENS   (text, optional) regenerations allowed per draft, default 3
 //   STATE        (KV namespace binding) remembers used links, each draft's decision and its regeneration count
+//   DAILY_DRAFT  (text, optional) what the daily schedule does: "live" (default) a real draft, "test" a TEST
+//                draft that cannot post, "off" nothing
+//   DRAFT_UK_HOUR (text, optional) UK hour (0-23) at which the daily draft starts, default 10
+//
+// Daily schedule (Cloudflare Cron Trigger, set by deploy-worker.yml): it fires at :00 and :30 of 09:00 and
+// 10:00 UTC. Only the fires in the chosen UK hour act, so the draft starts at 10:00 UK time in both GMT and BST;
+// the :30 fire is a retry for when GitHub refused the first one. KV key "daily:<UK date>" stops a second draft
+// on the same day. The draft it starts is a normal one: nothing is posted until the approver clicks Approve.
 
 const DAY = 86400;
 
@@ -50,7 +58,43 @@ export default {
     if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
     return doAction(p, token, env);
   },
+
+  // Cloudflare Cron Trigger. A thrown error marks the fire as failed in the Worker's logs.
+  async scheduled(controller, env) {
+    const result = await dailyDraft(new Date(controller.scheduledTime || Date.now()), env);
+    console.log(`daily draft: ${result}`);
+  },
 };
+
+// The UK date (YYYY-MM-DD) and hour for a moment in time, following GMT/BST.
+function ukClock(when) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23",
+    }).formatToParts(when).map((x) => [x.type, x.value]),
+  );
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, hour: parseInt(parts.hour, 10) };
+}
+
+// Starts the day's draft (weekly.yml, mode new) once per UK day. Returns a short description of what it did.
+async function dailyDraft(when, env) {
+  const setting = String(env.DAILY_DRAFT || "live").trim().toLowerCase();
+  if (setting === "off") return "off (DAILY_DRAFT=off)";
+  const test = setting === "test";
+  const hour = parseInt(env.DRAFT_UK_HOUR || "10", 10);
+  const uk = ukClock(when);
+  if (uk.hour !== hour) return `not the draft hour (UK ${uk.hour}:00, draft hour ${hour}:00)`;
+  const key = `daily:${uk.date}`;
+  if (await env.STATE.get(key)) return `already started for ${uk.date}`;
+  await dispatch(env, "weekly.yml", {
+    mode: "new",
+    dry_run: test ? "true" : "false",
+    refresh_token: test ? "false" : "true",   // the Instagram token refresh used to run with the GitHub schedule
+    source: test ? "cloudflare-test" : "cloudflare",
+  });
+  await env.STATE.put(key, test ? "test" : "live", { expirationTtl: 3 * DAY });
+  return `started ${test ? "a TEST" : "a live"} draft for ${uk.date}`;
+}
 
 async function doAction(p, token, env) {
   const kv = env.STATE;
