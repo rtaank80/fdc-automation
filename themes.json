@@ -149,7 +149,7 @@
   },
   "models": {
     "_note": "Cloudflare model for each image. Override with the IMAGE_MODEL_A / IMAGE_MODEL_B settings.",
-    "A": "@cf/black-forest-labs/flux-2-klein-9b",
+    "A": "@cf/black-forest-labs/flux-2-dev",
     "B": "@cf/leonardo/lucid-origin"
   }
 }

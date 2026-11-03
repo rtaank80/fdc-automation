@@ -75,7 +75,7 @@ th = next(t for t in cfg["themes"] if t["id"] == "confidence")
 out = Path(tempfile.mkdtemp())
 pa = pw.generate_image(cfg, th, out / "a.jpg", False, person="a man in his 30s of white British heritage", letter="A")
 pb = pw.generate_image(cfg, th, out / "b.jpg", False, person="a woman in her 50s of Indian heritage", letter="B")
-assert "flux-2-klein-9b" in calls[0][0] and "files" in calls[0][1], "A uses FLUX.2 (multipart)"
+assert "flux-2-dev" in calls[0][0] and "files" in calls[0][1], "A uses FLUX.2 (multipart)"
 assert "lucid-origin" in calls[1][0] and "json" in calls[1][1], "B uses Lucid Origin (JSON)"
 assert pa != pb and "man in his 30s" in pa and "woman in her 50s" in pb and "Bright, airy" in pb
 assert "smiling or laughing" in pa and "everyday clothes" in pa

@@ -8,7 +8,7 @@ What was decided while building this, and why. Newest decisions are lower in eac
 - **Images stored in the repo (`images/`)**, not an image host such as imgbb.
 
 ## Content
-- **Image models on Cloudflare Workers AI** (pennies a week). Image A uses FLUX.2 klein 9B. Image B uses Leonardo Lucid Origin because the two FLUX.2 variants looked too similar when used together. Models can be overridden with `IMAGE_MODEL_A` and `IMAGE_MODEL_B`.
+- **Image models on Cloudflare Workers AI** (pennies a week). Image A uses FLUX.2 dev (switched from FLUX.2 klein 9B on 3 Nov 2026 for better detail; about $0.04 an image against $0.015, still mostly inside the free daily allowance). Image B uses Leonardo Lucid Origin because two FLUX.2 variants looked too similar when used together. Models can be overridden with `IMAGE_MODEL_A` and `IMAGE_MODEL_B`.
 - **Two images per draft with different prompts, styles, models and people**, so the approver has a real choice.
 - **Every image shows a smiling person**, because the practice wants people, not objects. The person mix is 80% white, 10% Black, 10% Asian, with random gender and age, because the models otherwise favour one look. The two people differ by age band, and a regenerated image never reuses the previous people.
 - **"Bright, healthy-looking" teeth, not "perfect".** UK dental advertising rules discourage overpromising. Prompts ask for healthy, even, bright teeth and clear skin, and block cartoonish or glowing teeth. Captions keep "Imagery is illustrative. Individual results vary."

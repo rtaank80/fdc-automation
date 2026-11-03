@@ -6,7 +6,7 @@ flowchart TD
   CR[Worker Cron Trigger: daily 10:00 UK] --> G[weekly.yml: generate]
   G --> T[pick theme: normal rotation or seasonal]
   T --> C[captions: 1 template, 2 Claude if key set, 3 Cloudflare Llama]
-  T --> I[images A and B in parallel: FLUX.2 klein 9B and Lucid Origin]
+  T --> I[images A and B in parallel: FLUX.2 dev and Lucid Origin]
   C --> D[(draft artifact: draft.json, image-a.jpg, image-b.jpg, 7 days)]
   I --> D
   D --> E[email to approver via SMTP, signed buttons]
