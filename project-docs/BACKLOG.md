@@ -25,7 +25,7 @@ Done: compact grid with two buttons per caption, summary line, Instagram-style p
 ## Platform and operations
 | Item | Priority | Status |
 |---|---|---|
-| Run the schedule from a Cloudflare Cron Trigger (reliable timing, 10:00 UK all year) | P2 | **Built**; confirm the first runs, then decide whether to remove the GitHub backup schedule |
+| Run the schedule from a Cloudflare Cron Trigger (reliable timing, 10:00 UK all year) | P2 | **Done**; first run 3 Nov 2026 fired on time. GitHub schedule removed |
 | Deploy `worker/worker.js` automatically from GitHub | P2 | **Built** (`deploy-worker.yml`); needs the `CLOUDFLARE_DEPLOY_TOKEN` secret and a first run to confirm |
 | Confirm Lucid Origin response handling and image quality over many runs | P2 | To do |
 | Review the first real posts end to end | P1 | To do |
