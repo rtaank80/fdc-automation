@@ -214,7 +214,7 @@ function esc(s) {
 
 function confirmPage(p, token) {
   const act = ACTIONS[p.a];
-  const detail = p.a === "approve" ? `Option ${esc(p.c)} (${esc(p.l || "")}) with image ${esc(p.i || "A")}` : "";
+  const detail = p.a === "approve" ? `${p.l ? esc(p.l) : `Option ${esc(p.c)}`} with image ${esc(p.i || "A")}` : "";
   const test = p.x === 1 ? `<p class="test">Test draft: nothing will be posted to Instagram.</p>` : "";
   const body = `
     <p class="topic">${esc(p.t || "")}</p>

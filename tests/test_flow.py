@@ -19,7 +19,6 @@ from email import message_from_bytes, policy
 sent = []
 approval_email.send = lambda msg, host, port, user, pwd: sent.append((msg, host, port, user))
 good = lambda n: {"caption": f"Hook {n}.\n\nBody text {n}.\n\nBook via link in bio.\nhttps://x", "hashtags": ["#a", "#Birmingham"], "alt_text": f"alt {n}"}
-pw.claude_caption = lambda cfg, theme, avoid=None: good("claude" + ("-avoid" if avoid else ""))
 pw.cloudflare_caption = lambda cfg, theme, avoid=None: good("cf" + ("-avoid" if avoid else ""))
 img_calls = []
 def fake_img(cfg, theme, path, dry, variation="", person=None, label="", letter="A"):
@@ -31,24 +30,28 @@ def links(msg):
     return list(dict.fromkeys(re.findall(r'href="([^"]+)"', html))), html
 def reset(): shutil.rmtree(pw.OUT, ignore_errors=True); shutil.rmtree(pw.ROOT/"previous", ignore_errors=True)
 
-# 1. real (non-dry) new draft with all 3 options
+# 1. real (non-dry) new draft with both caption options
 reset(); os.environ["MODE"]="new"; os.environ["REGENS_USED"]="0"
 pw.cmd_generate(ns(False))
 msg, host, port, user = sent[-1]
 d = json.loads((pw.OUT/"draft.json").read_text())
-assert [c["number"] for c in d["candidates"]] == [1,2,3], d["candidates"]
+assert [c["number"] for c in d["candidates"]] == [1,2], d["candidates"]
+assert [c["label"] for c in d["candidates"]] == ["Instagram Caption - Choice 1", "Instagram Caption - Choice 2"]
+assert not any("http" in c["caption"] or "lovable.app" in c["caption"] for c in d["candidates"]), "no URLs in captions"
+assert all("link in" in c["caption"] for c in d["candidates"])
 assert not d["dry_run"] and d["regens_used"]==0 and d["mode"]=="new"
 assert msg["To"]=="approver@example.com" and "sender@example.com" in msg["From"] and "[TEST]" not in msg["Subject"]
 assert (host,port,user)==("smtp.example","smtp.example"[:0] or port,"sender@example.com")
 hrefs, html = links(msg)
-assert len(hrefs)==6+3+1, hrefs   # 3 captions x 2 images + 3 regen + skip
+assert len(hrefs)==4+3+1, hrefs   # 2 captions x 2 images + 3 regen + skip
 assert all(h.startswith("https://fdc-approvals.example.workers.dev/a/") for h in hrefs)
 assert "cid:postimage-a" in html and "cid:postimage-b" in html and "Regenerations left for this draft: 3 of 3" in html
+assert "Instagram Caption - Choice 1" in html and "Instagram Caption - Choice 2" in html and "Option " not in html
 # the image is really attached inline
 cts = [p.get_content_type() for p in msg.walk()]
 assert cts.count("image/jpeg")==2 and "image/jpeg" in cts and "text/plain" in cts and "text/html" in cts, cts
-assert msg.get_body(preferencelist=("plain",)).get_content().count("Approve option")==6
-print("1 ok: new draft, 3 options, email has 10 links + two inline images")
+assert msg.get_body(preferencelist=("plain",)).get_content().count("Approve Instagram Caption - Choice")==4
+print("1 ok: new draft, 2 caption choices without URLs, email has 8 links + two inline images")
 real_draft_dir = Path("saved_real"); shutil.rmtree(real_draft_dir, ignore_errors=True); shutil.copytree(pw.OUT, real_draft_dir)
 
 # 2. regen captions: keeps image bytes, passes avoid, counts regens
@@ -61,7 +64,7 @@ pw.cmd_generate(ns(False))
 d2 = json.loads((pw.OUT/"draft.json").read_text())
 assert (pw.OUT/"image-a.jpg").read_bytes()==prev_img and (pw.OUT/"image-b.jpg").exists() and img_calls==[] , "image must be reused, not regenerated"
 assert d2["regens_used"]==1 and d2["week"]==d["week"] and d2["theme"]==d["theme"]
-assert "claude-avoid" in d2["candidates"][1]["caption"], "previous captions must be passed as 'avoid'"
+assert "cf-avoid" in d2["candidates"][1]["caption"], "previous captions must be passed as 'avoid'"
 _, html2 = links(sent[-1][0]); assert "2 of 3" in html2
 print("2 ok: captions mode reuses image, avoids old captions, shows 2 of 3 left")
 
@@ -76,7 +79,7 @@ print("3 ok: image mode keeps captions, asks for a varied image")
 # 4. no regenerations left -> no regen buttons
 reset(); os.environ.update(MODE="all", REGENS_USED="3")
 pw.cmd_generate(ns(False))
-hrefs4, html4 = links(sent[-1][0]); assert len(hrefs4)==6+1 and "No regenerations left" in html4
+hrefs4, html4 = links(sent[-1][0]); assert len(hrefs4)==4+1 and "No regenerations left" in html4
 print("4 ok: at the cap the email offers only approve/skip")
 
 # 5. dry run -> [TEST] email, x=1 in links, template only
@@ -107,8 +110,8 @@ def run_publish(draft_dir, option, dry=False):
     os.environ["DRAFT_RUN_ID"]="9001"; os.environ["CHOSEN_OPTION"]=str(option)
     pw.cmd_publish(argparse.Namespace(dry_run=dry, out=None))
 reset(); run_publish(real_draft_dir, 2)
-assert len(posts)==1 and posts[0][1]==d["candidates"][1]["caption"] and posts[0][2]=="alt claude"
-print("7 ok: approving option 2 posts exactly Claude's caption")
+assert len(posts)==1 and posts[0][1]==d["candidates"][1]["caption"] and posts[0][2]=="alt cf"
+print("7 ok: approving choice 2 posts exactly the AI caption")
 for label, fn in [("option not in draft", lambda: run_publish(real_draft_dir, 7)),
                   ("test draft", lambda: run_publish(Path("saved_dry"), 1)),
                   ("dry-run flag", lambda: run_publish(real_draft_dir, 1, dry=True))]:
@@ -127,3 +130,11 @@ h = approval_email._caption_html("For life's occasions & more. #Smile #FDC\nNext
 assert "life&#x27;s" in h and "#x27</span>" not in h and "&amp; more" in h, h
 assert h.count('<span style="color:#00376b;">#') == 2 and "<br>Next line" in h, h
 print("10 ok: apostrophes and & show correctly in the email; hashtags still highlighted")
+
+c = pw.strip_urls("Hook.\n\nBook via the link in our bio.\nhttps://fdc-invisalign-cosmetic.lovable.app/\n\nVisit www.example.com today. Follow Fdc.dental")
+assert "http" not in c and "www." not in c and "lovable" not in c and "Follow Fdc.dental" in c and "\n\n\n" not in c, c
+cfg = pw.load_config(); th = {"topic": "T", "angle": "A"}
+assert "lovable.app" not in pw.fallback_caption(cfg, th)["caption"] and "link in our bio" in pw.fallback_caption(cfg, th)["caption"]
+_, prompt = pw._prompts(cfg, th)
+assert "300-600 characters" in prompt and "lovable.app" not in prompt and "Do NOT include any website" in prompt, prompt
+print("11 ok: URLs are removed from captions, the account name stays")

@@ -13,7 +13,8 @@ What was decided while building this, and why. Newest decisions are lower in eac
 - **Every image shows a smiling person**, because the practice wants people, not objects. The person mix is 80% white, 10% Black, 10% Asian, with random gender and age, because the models otherwise favour one look. The two people differ by age band, and a regenerated image never reuses the previous people.
 - **"Bright, healthy-looking" teeth, not "perfect".** UK dental advertising rules discourage overpromising. Prompts ask for healthy, even, bright teeth and clear skin, and block cartoonish or glowing teeth. Captions keep "Imagery is illustrative. Individual results vary."
 - **Ordinary clothing, no festive styling.** Early images all looked festive because the `events-season` theme asked for festive lights; it was rewritten and the shared style now blocks festive or party looks. Seasonal content is chosen deliberately through `calendar.json`.
-- **Three caption options**: 1 default template, 2 Claude (only if `ANTHROPIC_API_KEY` is set), 3 Cloudflare Llama 3.3 70B. All pass the compliance filter.
+- **Two caption choices** (Nov 2026; the Claude option was dropped at the owner's request): Choice 1 the default template, Choice 2 Cloudflare Llama 3.3 70B (300-600 characters, two thirds of the earlier length). Both pass the compliance filter. Email headings read "Instagram Caption - Choice 1/2".
+- **No URLs in captions**: Instagram does not make caption links clickable, so captions point to the link in bio. `strip_urls` removes any URL a model adds anyway.
 - **Seasonal calendar** mixed into the rotation (one post in three by default), with date windows and pinned awareness days. Normal themes rotate daily because the schedule is daily.
 
 ## Approval
