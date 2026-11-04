@@ -5,7 +5,7 @@
 flowchart TD
   CR[Worker Cron Trigger: daily 10:00 UK] --> G[weekly.yml: generate]
   G --> T[pick theme: normal rotation or seasonal]
-  T --> C[captions: 1 template, 2 Claude if key set, 3 Cloudflare Llama]
+  T --> C[captions: Choice 1 template, Choice 2 Cloudflare Llama]
   T --> I[images A and B in parallel: FLUX.2 dev and Lucid Origin]
   C --> D[(draft artifact: draft.json, image-a.jpg, image-b.jpg, 7 days)]
   I --> D
@@ -50,8 +50,8 @@ flowchart TD
 `themes.json` holds 12 normal themes (`id`, `topic`, `angle`, `image` for A, `image_b` for B). `calendar.json` holds seasonal themes by month, with optional `days` window and `pin`. `pick_theme` takes every Nth post (`seasonal_every`, default 3) from the month's seasonal themes and otherwise the next normal theme, rotating by day. The `angle` is used for captions only.
 
 ## Settings and secrets (names only; values are never in the repo)
-GitHub secrets: `IG_ACCESS_TOKEN`, `GH_PAT` (Secrets read/write, for token refresh), `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` (Workers AI), `ANTHROPIC_API_KEY` (optional), `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM`, `APPROVER_EMAIL`, `LINK_SECRET`. GitHub secret for deploys: `CLOUDFLARE_DEPLOY_TOKEN` (Workers Scripts edit). GitHub variables: `APPROVAL_BASE_URL`, `SMTP_HOST` (default smtp.livemail.co.uk), `SMTP_PORT` (default 587), optional `IMAGE_PROVIDER`, `IMAGE_MODEL_A`, `IMAGE_MODEL_B`, `IMAGE_HOST`.
+GitHub secrets: `IG_ACCESS_TOKEN`, `GH_PAT` (Secrets read/write, for token refresh), `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` (Workers AI), `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM`, `APPROVER_EMAIL`, `LINK_SECRET`. GitHub secret for deploys: `CLOUDFLARE_DEPLOY_TOKEN` (Workers Scripts edit). GitHub variables: `APPROVAL_BASE_URL`, `SMTP_HOST` (default smtp.livemail.co.uk), `SMTP_PORT` (default 587), optional `IMAGE_PROVIDER`, `IMAGE_MODEL_A`, `IMAGE_MODEL_B`, `IMAGE_HOST`.
 Optional variable `CLOUDFLARE_WORKER_NAME`. Worker: secrets `LINK_SECRET` (same as GitHub) and `GH_TOKEN` (fine-grained, Actions read and write on this repo); text `GH_REPO`, `GH_REF`, `MAX_REGENS`; KV binding `STATE`.
 
 ## External services
-Instagram API with Instagram Login (no Facebook Page), Cloudflare Workers AI (images and caption option 3), Cloudflare Worker and KV, GitHub Actions and Pages, SMTP mailbox at UK2 (`smtp.livemail.co.uk`), optional Anthropic API.
+Instagram API with Instagram Login (no Facebook Page), Cloudflare Workers AI (images and caption Choice 2), Cloudflare Worker and KV, GitHub Actions and Pages, SMTP mailbox at UK2 (`smtp.livemail.co.uk`).

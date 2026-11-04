@@ -1,10 +1,10 @@
 # FDC weekly Instagram automation
 
-Every week this prepares a post for **@fdc.dental**: an AI-generated cosmetic dentistry / whitening image and up to three caption options, with a link to the website. The approver gets an email, picks a caption with one button, and only then does it post.
+Every week this prepares a post for **@fdc.dental**: an AI-generated cosmetic dentistry / whitening image and two caption choices that point people to the link in bio. The approver gets an email, picks a caption with one button, and only then does it post.
 
 ```
 Cloudflare Worker schedule (daily, 10:00 UK time) starts "Weekly Instagram draft" in GitHub Actions
-  -> pick theme -> up to 3 captions (1 template, 2 Claude, 3 Cloudflare) + two images (A and B, made at the same time)
+  -> pick theme -> 2 captions (Choice 1 template, Choice 2 Cloudflare AI) + two images (A and B, made at the same time)
   -> email to the approver: both images, each caption with an Approve button per image, and
      "new captions", "new images", "new everything" and "skip" buttons
   -> a button opens a confirmation page (Cloudflare Worker); pressing Confirm acts:
@@ -40,13 +40,12 @@ Meta asks for a public Privacy Policy URL (and a Data Deletion URL) before an ap
 4. Check the contact details and wording are right for the practice before publishing.
 
 ### 3. Image and caption keys
-- **Cloudflare Workers AI** (images: FLUX.2 dev and Lucid Origin; caption option 3: Llama 3.3 70B). One draft a day normally fits in the free daily allowance; regenerations can go slightly over.
+- **Cloudflare Workers AI** (images: FLUX.2 dev and Lucid Origin; caption Choice 2: Llama 3.3 70B). One draft a day normally fits in the free daily allowance; regenerations can go slightly over.
   1. Sign up free at dash.cloudflare.com.
   2. Open **AI > Workers AI**, choose **Use REST API**, and copy your **Account ID**.
   3. Click **Create a Workers AI API Token**, accept the prefilled settings, create it and copy the token.
   4. Check Black Forest Labs' terms (bfl.ai/legal/terms-of-service) allow commercial use for your case.
   To use OpenAI for images instead, set the repo variable `IMAGE_PROVIDER=openai` and add the secret `OPENAI_API_KEY`.
-- **Anthropic API key** (optional): adds caption option 2 (Claude). Without it the email offers options 1 and 3.
 - **Image hosting:** nothing to set up. Each approved image is saved into the repo's `images/` folder. To use imgbb instead, set the variable `IMAGE_HOST=imgbb` and add the secret `IMGBB_API_KEY`.
 
 ### 4. A GitHub token so the Worker can start workflows
@@ -61,7 +60,6 @@ Repo > Settings > Secrets and variables > Actions.
 | Name | Value |
 |---|---|
 | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | from step 3 |
-| `ANTHROPIC_API_KEY` | optional |
 | `IG_ACCESS_TOKEN` | from step 2 |
 | `GH_PAT` | a fine-grained token with **Secrets: Read and write** on this repo; lets the weekly job save the refreshed Instagram token (without it the token must be replaced by hand before day 60) |
 | `SMTP_USER` | the full sending mailbox address, e.g. `sender@your-domain.example` |
@@ -96,7 +94,7 @@ Repo > Settings > Secrets and variables > Actions.
 4. After that it runs by itself every day at 10:00 UK time, started by the Worker's Cloudflare schedule. To pause it, set the Worker setting `DAILY_DRAFT` to `off` (or `test` for TEST drafts). Do not disable the workflow in GitHub: the Worker and the email buttons need it.
 
 ## Using the email
-- **Approve option N with image A / image B**: one button per image under each caption; opens a confirmation page; **Confirm** starts the post (usually live within a couple of minutes).
+- **Post with image A / image B** (under each Instagram Caption choice): one button per image under each caption; opens a confirmation page; **Confirm** starts the post (usually live within a couple of minutes).
 - **Generate new captions / new images / both** (new images replaces both A and B): a fresh email follows in a few minutes. Three of these per draft at most; the email shows how many are left.
 - **Skip this draft**: nothing posts.
 - Each link works once, and only until its expiry shown in the email. Once a caption is approved or skipped, the rest of that draft's links (including its regenerations) stop working. There is no limit per week: each scheduled run is a separate draft, so how often posts go out is set by the schedule in `weekly.yml`, not by the Worker.

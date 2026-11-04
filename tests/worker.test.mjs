@@ -20,7 +20,7 @@ function sign(p, secret = SECRET) {
 const base = { d: "9001", w: "2026-W44", e: NOW + 3600, t: "Whitening", x: 0 };
 const mk = (o) => sign({ ...base, ...o });
 const T = {
-  approve2: mk({ a: "approve", c: 2, l: "Claude" }), approve3: mk({ a: "approve", c: 3, l: "Cloudflare" }),
+  approve2: mk({ a: "approve", c: 2, l: "Instagram Caption - Choice 2" }), approve3: mk({ a: "approve", c: 3, l: "Cloudflare" }),
   approve2B: mk({ a: "approve", c: 2, i: "B", l: "Claude" }), approveBad: mk({ a: "approve", c: 2, i: "<x>", l: "Claude" }),
   captions: mk({ a: "captions" }), image: mk({ a: "image" }), all: mk({ a: "all" }), skip: mk({ a: "skip" }),
   captions_b: mk({ d: "9002", a: "captions" }),
@@ -53,7 +53,7 @@ const text = async r => (await r).text();
 // --- GET shows a confirm page and changes nothing
 let env = makeEnv(); calls = [];
 let r = await get(env, T.approve2); let html = await r.text();
-ok(r.status === 200 && html.includes("Confirm") && html.includes("Option 2 (Claude)") && html.includes(`action="/c/${T.approve2}"`), "GET approve -> confirm page with option and POST form");
+ok(r.status === 200 && html.includes("Confirm") && html.includes("Instagram Caption - Choice 2 with image A") && html.includes(`action="/c/${T.approve2}"`), "GET approve -> confirm page with option and POST form");
 ok(calls.length === 0 && env.STATE._m.size === 0, "GET changes nothing (scanner-safe)");
 ok(r.headers.get("cache-control") === "no-store" && r.headers.get("referrer-policy") === "no-referrer", "no-store + no-referrer headers");
 

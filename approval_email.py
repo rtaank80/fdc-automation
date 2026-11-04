@@ -200,8 +200,8 @@ def build_message(
         )
         cards.append(
             '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 20px;">'
-            f'<tr><td style="font:700 12px Arial,Helvetica,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:{TEAL};padding:0 2px 6px;">'
-            f'Option {c["number"]} &middot; {_esc(c["label"])}</td></tr>'
+            f'<tr><td style="font:700 13px Arial,Helvetica,sans-serif;letter-spacing:.02em;color:{TEAL};padding:0 2px 6px;">'
+            f'{_esc(c["label"])}</td></tr>'
             '<tr><td style="border:1px solid #dbdbdb;border-radius:12px;background:#ffffff;">'
             # mock Instagram post header
             '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>'
@@ -275,8 +275,8 @@ Imagery is illustrative. Sent automatically by the FDC Instagram automation.
     lines += [f"Approve this Instagram post: {topic}", "",
               f"{n_cap} captions, {n_img} images. Links work until {expiry}. Each opens a confirmation page first.", ""]
     for c in cands:
-        lines += [f"--- Option {c['number']}: {c['label']} ---", c["caption"], "",
-                  *[f"Approve option {c['number']} with image {L}: {approve_links[(c['number'], L)]}" for L in letters], ""]
+        lines += [f"--- {c['label']} ---", c["caption"], "",
+                  *[f"Approve {c['label']} with image {L}: {approve_links[(c['number'], L)]}" for L in letters], ""]
     lines += ["--- Not quite right? ---"]
     if left > 0:
         for a, label in others:

@@ -140,8 +140,7 @@ def fallback_caption(cfg: dict, theme: dict) -> dict:
         f"{theme['topic']}\n\n"
         f"{theme['angle']}. At Family Dental Centre in {b['location']}, we listen before we "
         f"recommend and shape a plan around you, with no pressure to decide.\n\n"
-        f"Curious? Book a consultation via the link in our bio.\n"
-        f"{b['website']}"
+        f"Curious? Book a consultation via the link in our bio."
     )
     return {
         "caption": caption,
@@ -150,8 +149,13 @@ def fallback_caption(cfg: dict, theme: dict) -> dict:
     }
 
 
+# Caption length asked of the AI model (characters, before the disclaimer and hashtags).
+# Reduced to two thirds of the earlier 450-900 at the owner's request (Nov 2026).
+CAPTION_LENGTH = (300, 600)
+
+
 def _prompts(cfg: dict, theme: dict, avoid: list[str] | None = None) -> tuple[str, str]:
-    """The instructions sent to the AI models (Claude and Cloudflare share them)."""
+    """The instructions sent to the AI caption model."""
     b = cfg["brand"]
     system = (
         "You write Instagram captions for a UK private dental practice. Follow UK dental "
@@ -163,9 +167,10 @@ def _prompts(cfg: dict, theme: dict, avoid: list[str] | None = None) -> tuple[st
         f"Practice: {b['name']}, {b['location']}. Tone: {b['tone']}.\n"
         f"This week's topic: {theme['topic']}\nAngle: {theme['angle']}\n\n"
         "Return JSON with keys:\n"
-        '  "caption": 450-900 characters, British English, a short hook line, 2-3 short paragraphs, '
-        "a call to action to book a consultation via the link in bio, and the website URL "
-        f"{b['website']} on its own line near the end. Max 2 emojis. Do NOT include hashtags.\n"
+        f'  "caption": {CAPTION_LENGTH[0]}-{CAPTION_LENGTH[1]} characters, British English, a short hook line, '
+        "1-2 short paragraphs, and a call to action to book a consultation via the link in our bio. "
+        "Do NOT include any website address or URL (links in Instagram captions are not clickable). "
+        "Max 2 emojis. Do NOT include hashtags.\n"
         '  "hashtags": array of 8-10 relevant hashtags (include #Birmingham)\n'
         '  "alt_text": one plain sentence (under 120 chars) describing an illustrative image of the topic\n'
     )
@@ -197,30 +202,6 @@ def _parse_caption_json(text: str, theme: dict) -> dict:
     if not isinstance(data["alt_text"], str):
         data["alt_text"] = f"Illustrative image: {theme['topic']}"
     return data
-
-
-def claude_caption(cfg: dict, theme: dict, avoid: list[str] | None = None) -> dict | None:
-    key = os.getenv("ANTHROPIC_API_KEY")
-    if not key:
-        return None
-    system, user = _prompts(cfg, theme, avoid)
-    try:
-        r = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-            json={
-                "model": os.getenv("CAPTION_MODEL", "claude-sonnet-5-5"),
-                "max_tokens": 900,
-                "system": system,
-                "messages": [{"role": "user", "content": user}],
-            },
-            timeout=90,
-        )
-        r.raise_for_status()
-        return _parse_caption_json("".join(p.get("text", "") for p in r.json()["content"]), theme)
-    except Exception as exc:  # noqa: BLE001
-        log(f"Claude caption failed ({exc}); skipping that option.")
-        return None
 
 
 def cloudflare_caption(cfg: dict, theme: dict, avoid: list[str] | None = None) -> dict | None:
@@ -262,9 +243,25 @@ def compliant(text: str, label: str = "") -> bool:
     return not hit
 
 
+# Full URLs, www. addresses and the bare website domain. Not "Fdc.dental", which is the account name.
+URL_RE = re.compile(r"(https?://\S+|www\.\S+|\b[\w.-]+\.lovable\.app\S*)", re.I)
+
+
+def strip_urls(text: str) -> str:
+    """Remove web addresses: Instagram captions cannot link, so we point people to the link in bio instead."""
+    lines = []
+    for line in text.splitlines():
+        cleaned = re.sub(r"[ \t]{2,}", " ", URL_RE.sub("", line)).rstrip()
+        if line.strip() and not cleaned.strip(" .:-|"):
+            continue  # the line was only a URL
+        lines.append(cleaned)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
 def finalise(cfg: dict, data: dict) -> dict:
-    """Add hashtags and the disclaimer, and respect Instagram's length limit."""
+    """Remove URLs, add hashtags and the disclaimer, and respect Instagram's length limit."""
     b = cfg["brand"]
+    data = {**data, "caption": strip_urls(data["caption"])}
     tags: list[str] = []
     for t in data["hashtags"] + b["base_hashtags"]:
         t = "#" + re.sub(r"[^0-9A-Za-z_]", "", t.lstrip("#"))
@@ -277,14 +274,14 @@ def finalise(cfg: dict, data: dict) -> dict:
     return {"caption": full, "alt_text": data["alt_text"][:300]}
 
 
-# Fixed option numbers, so "2" always means Claude whichever options are available that week.
-OPTIONS = [(1, "template", "Default template"), (2, "claude", "Claude"), (3, "cloudflare", "Cloudflare")]
+# Fixed option numbers, so "2" always means the AI caption whichever options are available that day.
+# The label is shown as the heading of each caption in the approval email.
+OPTIONS = [(1, "template", "Instagram Caption - Choice 1"), (2, "cloudflare", "Instagram Caption - Choice 2")]
 
 
 def build_candidates(cfg: dict, theme: dict, dry_run: bool = False, avoid: list[str] | None = None) -> list[dict]:
     makers = {
         "template": lambda: fallback_caption(cfg, theme),
-        "claude": lambda: None if dry_run else claude_caption(cfg, theme, avoid),
         "cloudflare": lambda: None if dry_run else cloudflare_caption(cfg, theme, avoid),
     }
     out = []
@@ -498,7 +495,7 @@ def draft_markdown(draft: dict) -> str:
         lines += [f"Image {im['id']}: {im.get('person') or 'no person'}"]
     lines += [""]
     for c in draft["candidates"]:
-        lines += [f"## Option {c['number']}: {c['label']}", "", c["caption"], "", "---", ""]
+        lines += [f"## {c['label']}", "", c["caption"], "", "---", ""]
     return "\n".join(lines)
 
 
