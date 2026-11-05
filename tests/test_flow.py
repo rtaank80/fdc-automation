@@ -225,6 +225,9 @@ os.environ["LINK_SECRET"] = saved
 # archive copy: commits to images/ for cloudflare, never stops the job, not done twice for github
 commits = []; real_commit = pw._commit_to_repo
 pw._commit_to_repo = lambda path: commits.append(path.name) or "https://raw.example/x"
+for k in ("GITHUB_REPOSITORY", "GITHUB_TOKEN"): os.environ.pop(k, None)
+real_archive(img); assert commits == [], "outside GitHub Actions the archive copy is skipped"
+os.environ.update(GITHUB_REPOSITORY="owner/repo", GITHUB_TOKEN="gh-test-token")   # set here, not taken from the machine
 real_archive(img); assert commits == ["upload_me.jpg"], commits
 pw._commit_to_repo = lambda path: (_ for _ in ()).throw(SystemExit("Could not save image to GitHub: 403"))
 real_archive(img)   # only a warning
