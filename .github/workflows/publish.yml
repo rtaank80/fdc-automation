@@ -23,7 +23,7 @@ on:
         default: false
 
 permissions:
-  contents: write   # saves the post image into the repo (IMAGE_HOST=github)
+  contents: write   # saves the post image into the repo's images/ folder (the public link for IMAGE_HOST=github, an archive copy otherwise)
   actions: read     # downloads the draft
 
 concurrency:
@@ -44,7 +44,9 @@ jobs:
         env:
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           IMGBB_API_KEY: ${{ secrets.IMGBB_API_KEY }}
-          IMAGE_HOST: ${{ vars.IMAGE_HOST || 'github' }}
+          IMAGE_HOST: ${{ vars.IMAGE_HOST || 'github' }}   # set the variable to cloudflare for a private repo
+          APPROVAL_BASE_URL: ${{ vars.APPROVAL_BASE_URL }}   # IMAGE_HOST=cloudflare uploads to this Worker
+          LINK_SECRET: ${{ secrets.LINK_SECRET }}            # signs that upload
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DRAFT_RUN_ID: ${{ inputs.draft_run_id }}
           CHOSEN_OPTION: ${{ inputs.option }}

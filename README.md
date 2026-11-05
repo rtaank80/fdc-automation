@@ -46,7 +46,7 @@ Meta asks for a public Privacy Policy URL (and a Data Deletion URL) before an ap
   3. Click **Create a Workers AI API Token**, accept the prefilled settings, create it and copy the token.
   4. Check Black Forest Labs' terms (bfl.ai/legal/terms-of-service) allow commercial use for your case.
   To use OpenAI for images instead, set the repo variable `IMAGE_PROVIDER=openai` and add the secret `OPENAI_API_KEY`.
-- **Image hosting:** nothing to set up. Each approved image is saved into the repo's `images/` folder. To use imgbb instead, set the variable `IMAGE_HOST=imgbb` and add the secret `IMGBB_API_KEY`.
+- **Image hosting:** by default each approved image is saved into the repo's `images/` folder and Instagram fetches it from GitHub, which needs a public repo. **For a private repo** set the variable `IMAGE_HOST=cloudflare`: the publish job then uploads the image to the approval Worker, which gives Instagram a link and deletes the image 48 hours later (change with the Worker setting `IMAGE_HOURS`). A copy is still kept in `images/` as an archive. It uses the existing `APPROVAL_BASE_URL` and `LINK_SECRET`, so nothing else is needed. To use imgbb instead, set `IMAGE_HOST=imgbb` and add the secret `IMGBB_API_KEY`.
 
 ### 4. A GitHub token so the Worker can start workflows
 1. GitHub > your profile picture > Settings > Developer settings > Personal access tokens > **Fine-grained tokens** > Generate new token.
@@ -128,6 +128,6 @@ Repo > Settings > Secrets and variables > Actions.
 - *Approved but nothing posted:* open the *Publish approved post* run and read its log. "No unexpired draft artifact" means the draft is over 7 days old.
 - *The people in the images still look too alike, or a group comes out stereotyped:* the model treats the description as guidance, not a guarantee. Check the `Person in the image` line in the run log against what you see, use **Generate a new image** in the email, and tell the maintainer which description misbehaved so the wording in `post_weekly.py` can be adjusted.
 - *Error 9007 / media not ready:* the script polls for it; re-run if the image host was slow.
-- *"Only photo or video can be accepted":* the image URL must be a public JPEG; check the repo is public.
+- *"Only photo or video can be accepted":* the image URL must be a public JPEG; check the repo is public, or set `IMAGE_HOST=cloudflare`.
 - *Token errors:* check the token has the `instagram_business_content_publish` permission and the account is an Instagram tester on the app.
 - *"Token refresh failed" warning on the first run:* a token must be at least 24 hours old before it can be refreshed. It resolves itself the next week.

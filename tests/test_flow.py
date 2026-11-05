@@ -14,6 +14,7 @@ os.environ.update(APPROVAL_BASE_URL="https://fdc-approvals.example.workers.dev",
     APPROVER_EMAIL="approver@example.com", SMTP_HOST="smtp.example", SMTP_USER="sender@example.com",
     SMTP_PASSWORD="pw", DRAFT_RUN_ID="9001")
 import approval_email, post_weekly as pw
+real_host_image, real_archive = pw.host_image, pw.archive_image   # tests 7-9 stub hosting; 15 tests the real ones
 from email import message_from_bytes, policy
 
 sent = []
@@ -104,6 +105,7 @@ os.environ.update(saved); print("6 ok: missing email config -> dry run continues
 posts=[]
 pw.host_image = lambda path: "https://raw.example/img.jpg"
 pw.publish_to_instagram = lambda url, cap, alt: posts.append((url, cap, alt)) or "M1"
+archived = []; pw.archive_image = lambda path: archived.append(path.name)
 os.environ["IG_ACCESS_TOKEN"]="tok"
 def run_publish(draft_dir, option, dry=False):
     pw.fetch_draft = lambda rid, dest: (shutil.rmtree(dest, ignore_errors=True), shutil.copytree(draft_dir, dest), json.loads((dest/"draft.json").read_text()))[2]
@@ -111,7 +113,8 @@ def run_publish(draft_dir, option, dry=False):
     pw.cmd_publish(argparse.Namespace(dry_run=dry, out=None))
 reset(); run_publish(real_draft_dir, 2)
 assert len(posts)==1 and posts[0][1]==d["candidates"][1]["caption"] and posts[0][2]=="alt cf"
-print("7 ok: approving choice 2 posts exactly the AI caption")
+assert archived == [d["images"][0]["file"]], archived
+print("7 ok: approving choice 2 posts exactly the AI caption, then keeps an archive copy")
 for label, fn in [("option not in draft", lambda: run_publish(real_draft_dir, 7)),
                   ("test draft", lambda: run_publish(Path("saved_dry"), 1)),
                   ("dry-run flag", lambda: run_publish(real_draft_dir, 1, dry=True))]:
@@ -188,3 +191,44 @@ os.environ["MODE"] = "image"; pw.notify_failure("x")
 assert sent[-1][0]["Subject"] == "The new version you asked for could not be made"
 os.environ["MODE"] = "new"
 print("14 ok: no failure email for test runs; secrets are blanked out; regenerations get their own wording")
+
+# ---- 15. IMAGE_HOST=cloudflare: signed upload to the Worker, then a private archive copy in images/
+assert pw.upload_signature("test-secret-123", "1700000000", b"\xff\xd8\xff\xe0fdc-test") == \
+    "cead4ac3ed178c24ab710efd5357be44b6170dc9a6230530e348bb2ebb475643", "same test vector as worker.test.mjs"
+class Resp:
+    def __init__(self, status, data=None, text=""): self.status_code, self._d, self.text = status, data, text
+    def json(self): return self._d
+img = Path("upload_me.jpg"); img.write_bytes(b"\xff\xd8\xff\xe0fdc-test")
+http = {"post": [], "head": [], "put": []}
+def fake_post(url, data=None, headers=None, timeout=None):
+    http["post"].append((url, data, headers))
+    return Resp(200, {"url": "https://fdc-approvals.example.workers.dev/img/" + "a" * 32 + ".jpg"})
+pw.requests.post = fake_post
+pw.requests.head = lambda url, timeout=None: (http["head"].append(url), Resp(200))[1]
+os.environ["IMAGE_HOST"] = "cloudflare"
+url = real_host_image(img)
+assert url == "https://fdc-approvals.example.workers.dev/img/" + "a" * 32 + ".jpg" and http["head"] == [url]
+purl, pdata, ph = http["post"][0]
+assert purl == "https://fdc-approvals.example.workers.dev/img" and pdata == img.read_bytes() and ph["Content-Type"] == "image/jpeg"
+assert ph["X-FDC-Signature"] == pw.upload_signature("test-secret-123", ph["X-FDC-Time"], pdata)
+assert "test-secret-123" not in json.dumps(ph), "the secret itself is never sent"
+pw.requests.post = lambda *a, **k: Resp(403, text='{"error":"bad signature"}')
+try: real_host_image(img); raise AssertionError("should stop")
+except SystemExit as e: assert "did not accept the image: 403" in str(e), e
+pw.requests.post = lambda *a, **k: Resp(200, {"url": "https://evil.example/x.jpg"})
+try: real_host_image(img); raise AssertionError("should stop")
+except SystemExit as e: assert "unexpected image address" in str(e), e
+saved = os.environ.pop("LINK_SECRET")
+try: real_host_image(img); raise AssertionError("should stop")
+except SystemExit as e: assert "LINK_SECRET" in str(e)
+os.environ["LINK_SECRET"] = saved
+# archive copy: commits to images/ for cloudflare, never stops the job, not done twice for github
+commits = []; real_commit = pw._commit_to_repo
+pw._commit_to_repo = lambda path: commits.append(path.name) or "https://raw.example/x"
+real_archive(img); assert commits == ["upload_me.jpg"], commits
+pw._commit_to_repo = lambda path: (_ for _ in ()).throw(SystemExit("Could not save image to GitHub: 403"))
+real_archive(img)   # only a warning
+os.environ["IMAGE_HOST"] = "github"; commits.clear(); pw._commit_to_repo = lambda path: commits.append(1) or "u"
+real_archive(img); assert commits == [], "github host already commits the image"
+pw._commit_to_repo = real_commit
+print("15 ok: cloudflare host signs the upload, checks the answer, and the archive copy never blocks a live post")

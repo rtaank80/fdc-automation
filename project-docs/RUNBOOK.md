@@ -29,7 +29,9 @@ Change the GitHub secret and the Worker secret to the same new value. Links in e
 | Buttons behave like an old version or `Post with image B` posts image A | The Cloudflare copy of the Worker was not updated. Check the latest "Deploy approval Worker" run (missing `CLOUDFLARE_DEPLOY_TOKEN` only gives a warning) |
 | Email does not arrive | Check the SMTP secrets and `SMTP_PORT` (587 STARTTLS by default; 465 for SSL), the junk folder, and the generate job log for "Approval email sent" |
 | `Token refresh failed` on the first run | A token must be 24 hours old before it can be refreshed; it resolves itself |
-| Instagram error "Only photo or video can be accepted" | The image URL must be a public JPEG; check the repo is public |
+| Instagram error "Only photo or video can be accepted" | The image URL must be a public JPEG. With `IMAGE_HOST=github` check the repo is public; with `cloudflare` open the `/img/...jpg` link from the publish log in a browser (it works for 48 hours) |
+| Publish log: "The approval Worker did not accept the image" | 404 or 405: the Worker has not been redeployed with the image upload (Actions > Deploy approval Worker). 403 "bad signature": `LINK_SECRET` differs between GitHub and the Worker. 403 "signature expired": the runner's clock is off; re-run |
+| Publish log warning "archive copy in images/ could not be saved" | The post is live; only the archive copy is missing. Check Settings > Actions > General > Workflow permissions is "Read and write" |
 | Meta "You can't make this change at the moment" | A temporary Meta security block; wait, or use a trusted device and network |
 
 ## Checks after a deploy
