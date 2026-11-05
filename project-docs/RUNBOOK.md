@@ -17,6 +17,18 @@ One-off setup for this: create a Cloudflare API token (My Profile > API Tokens >
 ## Rotating `LINK_SECRET`
 Change the GitHub secret and the Worker secret to the same new value. Links in emails sent before the change stop working.
 
+## Making the repo private
+Do the steps in this order; the repo must stay public until steps 1 to 3 are done.
+1. **Post images off GitHub.** Set the GitHub variable `IMAGE_HOST=cloudflare` (needs the Worker deployed with the `/img` upload; done 5 Nov 2026). Approve one real draft and check it posts; the publish log shows the `/img/...jpg` link and "Archive copy saved in images/". If Instagram refuses the Worker link, `IMAGE_HOST=imgbb` with the secret `IMGBB_API_KEY` is the fallback.
+2. **Privacy page off GitHub Pages.** GitHub Pages needs a paid plan for a private repo. Move `docs/privacy.html` (for example to the Worker at `/privacy`), check it loads, then change the **Privacy Policy URL** and **Data Deletion URL** in the Meta developer dashboard (App settings > Basic).
+3. **Tokens.** In GitHub > Settings > Developer settings > Fine-grained tokens, check `GH_TOKEN` (Worker) and `GH_PAT` (token refresh) are set to "Only select repositories" with this repo. A "Public repositories" token stops working when the repo goes private.
+4. **Billing guard.** Private repos get 2,000 free Actions minutes a month (public repos have no limit). Normal use is about 200 to 400. A draft that waits out Cloudflare's daily allowance can run up to 180 minutes, so set the Actions spending limit to 0 (Settings > Billing) so runs stop rather than charge.
+5. **Flip it.** Settings > General > Danger Zone > Change visibility > Private. Then turn off Settings > Pages.
+6. **Check.** The next daily draft arrives, a regeneration button works, an approval posts, and the Meta app still shows the privacy URL as valid.
+7. **Update docs.** `CLAUDE.md` ("The repo is public" section), `README.md` setup step 1, `project-docs/DECISIONS.md`.
+
+Making it private does not remove anything already public: earlier clones and forks keep their copies.
+
 ## Troubleshooting
 | Symptom | Cause and fix |
 |---|---|
@@ -29,7 +41,9 @@ Change the GitHub secret and the Worker secret to the same new value. Links in e
 | Buttons behave like an old version or `Post with image B` posts image A | The Cloudflare copy of the Worker was not updated. Check the latest "Deploy approval Worker" run (missing `CLOUDFLARE_DEPLOY_TOKEN` only gives a warning) |
 | Email does not arrive | Check the SMTP secrets and `SMTP_PORT` (587 STARTTLS by default; 465 for SSL), the junk folder, and the generate job log for "Approval email sent" |
 | `Token refresh failed` on the first run | A token must be 24 hours old before it can be refreshed; it resolves itself |
-| Instagram error "Only photo or video can be accepted" | The image URL must be a public JPEG; check the repo is public |
+| Instagram error "Only photo or video can be accepted" | The image URL must be a public JPEG. With `IMAGE_HOST=github` check the repo is public; with `cloudflare` open the `/img/...jpg` link from the publish log in a browser (it works for 48 hours) |
+| Publish log: "The approval Worker did not accept the image" | 404 or 405: the Worker has not been redeployed with the image upload (Actions > Deploy approval Worker). 403 "bad signature": `LINK_SECRET` differs between GitHub and the Worker. 403 "signature expired": the runner's clock is off; re-run |
+| Publish log warning "archive copy in images/ could not be saved" | The post is live; only the archive copy is missing. Check Settings > Actions > General > Workflow permissions is "Read and write" |
 | Meta "You can't make this change at the moment" | A temporary Meta security block; wait, or use a trusted device and network |
 
 ## Checks after a deploy

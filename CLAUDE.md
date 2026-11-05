@@ -4,8 +4,8 @@ Automated Instagram posting for **Fdc.dental** (Family Dental Centre cosmetics a
 
 This file is the starting point for any Claude Code session. Longer background is in `project-docs/` (ARCHITECTURE, DECISIONS, BACKLOG, RUNBOOK). The owner-facing setup guide is `README.md`.
 
-## The repo is public
-GitHub Pages serves `docs/privacy.html` (needed for the Meta app) and Instagram must fetch post images from `images/`, so the repo has to stay public. Therefore:
+## The repo is public (for now)
+GitHub Pages serves `docs/privacy.html` (needed for the Meta app), so the repo is public. Post images no longer need it: with the GitHub variable `IMAGE_HOST=cloudflare` the publish job uploads the image to the Worker, which serves it to Instagram and deletes it after 48 hours, and a private archive copy goes in `images/`. The owner plans to make the repo private once the privacy page has moved off GitHub Pages. Until then, and as good practice afterwards:
 - Never commit secrets, tokens, `.env`, account IDs, or personal email addresses. Use placeholders such as `approver@example.com`.
 - Real values live in GitHub Actions secrets and variables, and in the Cloudflare Worker settings. Names are listed in `project-docs/ARCHITECTURE.md`.
 
@@ -31,7 +31,7 @@ The tests are also run by `.github/workflows/ci.yml` on every push. Always run t
 | `.github/workflows/deploy-worker.yml` | Deploys `worker/worker.js` to Cloudflare when it changes on `main`, and sets the Worker's Cron Trigger |
 | `tests/` | `test_flow.py` (generate, email, publish), `test_content.py` (people, themes, models, retries), `worker.test.mjs` |
 | `docs/privacy.html` | Privacy policy for Meta, hosted with GitHub Pages |
-| `images/` | Posted images are committed here by the publish job |
+| `images/` | Posted images are committed here by the publish job (the public link with `IMAGE_HOST=github`, an archive copy otherwise) |
 
 ## Rules that must not be broken
 1. **No post without approval.** Test drafts (`dry_run`, link payload `x=1`) can never post; `publish` refuses them whatever flags are passed. Expired drafts refuse too.
@@ -55,5 +55,6 @@ The tests are also run by `.github/workflows/ci.yml` on every push. Always run t
 ## Known gaps and unverified points
 - Image quality and diversity from the real models are not yet reviewed over many runs. Lucid Origin (image B) request format is implemented from its documentation and its response parsing has not been confirmed against the live API.
 - Instagram posting has not been confirmed end to end on a real approved draft in this version of the code; check the first real post.
+- `IMAGE_HOST=cloudflare` (images served by the Worker from KV at `/img/<id>.jpg`) is not yet confirmed with Instagram; check the first post made with it.
 - Dates and wording of the seasonal calendar came from general knowledge and need a check each year.
 - See `project-docs/BACKLOG.md` for the prioritised list of enhancements.

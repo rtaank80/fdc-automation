@@ -40,9 +40,9 @@ for (let i = 0; i < 5; i++) T[`t_regen${i}`] = mk({ d: String(9210 + i), w: "202
 let fails = 0; const ok = (c, m) => { if (!c) { fails++; console.log("FAIL:", m); } else console.log("ok  :", m); };
 
 function makeEnv() {
-  const m = new Map();
+  const m = new Map(), opts = new Map();
   return { LINK_SECRET: "test-secret-123", GH_TOKEN: "ghp_secret", GH_REPO: "me/repo", MAX_REGENS: "3",
-    STATE: { get: async k => m.get(k) ?? null, put: async (k, v) => { m.set(k, v); }, _m: m } };
+    STATE: { get: async k => m.get(k) ?? null, put: async (k, v, o) => { m.set(k, v); opts.set(k, o); }, _m: m, _o: opts } };
 }
 let calls = [], ghStatus = 204;
 globalThis.fetch = async (url, init) => { calls.push({ url, init, body: JSON.parse(init.body) }); return new Response(ghStatus === 204 ? null : "boom", { status: ghStatus }); };
@@ -172,5 +172,52 @@ log = await fire(env, "2026-11-03T10:00:00Z"); ok(calls.length === 0 && log.incl
 env = { ...makeEnv(), DRAFT_UK_HOUR: "9" }; calls = [];
 await fire(env, "2026-11-03T10:00:00Z"); ok(calls.length === 0, "DRAFT_UK_HOUR=9 ignores the 10:00 UK fire");
 await fire(env, "2026-11-03T09:00:00Z"); ok(calls.length === 1, "DRAFT_UK_HOUR=9 acts at 09:00 UK");
+
+// --- post images: signed upload, served for Instagram, deleted by KV expiry
+const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from("fdc-test")]);
+const upSig = (ts, data, secret = SECRET) =>
+  crypto.createHmac("sha256", secret).update(`img-upload.${ts}.${crypto.createHash("sha256").update(data).digest("hex")}`).digest("hex");
+ok(upSig("1700000000", JPEG) === "cead4ac3ed178c24ab710efd5357be44b6170dc9a6230530e348bb2ebb475643", "upload signature matches the Python test vector");
+const upload = (env, data, { ts = String(Math.floor(Date.now() / 1000)), sig, method = "POST" } = {}) =>
+  worker.fetch(new Request("https://w.example/img", { method, body: method === "POST" ? data : undefined,
+    headers: { "content-type": "image/jpeg", "x-fdc-time": ts, "x-fdc-signature": sig ?? upSig(ts, data) } }), env);
+env = makeEnv(); calls = [];
+r = await upload(env, JPEG); let up = await r.json();
+ok(r.status === 200 && /^https:\/\/w\.example\/img\/[0-9a-f]{32}\.jpg$/.test(up.url) && up.expires_in_hours === 48, "signed upload -> 200 with a random image address");
+const imgKey = "img:" + up.url.match(/([0-9a-f]{32})\.jpg$/)[1];
+ok(env.STATE._o.get(imgKey).expirationTtl === 48 * 3600, "image is stored with a 48-hour expiry (Cloudflare deletes it)");
+ok(calls.length === 0, "upload starts no GitHub workflow");
+r = await worker.fetch(new Request(up.url), env);
+ok(r.status === 200 && r.headers.get("content-type") === "image/jpeg" && Buffer.from(await r.arrayBuffer()).equals(JPEG), "GET serves the exact JPEG");
+r = await worker.fetch(new Request(up.url, { method: "HEAD" }), env);
+ok(r.status === 200 && r.headers.get("content-length") === String(JPEG.length), "HEAD works (the publish job's reachability check)");
+env.STATE._m.delete(imgKey);
+r = await worker.fetch(new Request(up.url), env); ok(r.status === 404, "after expiry the image is gone (404)");
+r = await worker.fetch(new Request("https://w.example/img/" + "0".repeat(32) + ".jpg"), env); ok(r.status === 404, "unknown image 404");
+r = await worker.fetch(new Request("https://w.example/img/abc.jpg"), env); ok(r.status === 404, "malformed image name 404");
+const now = String(Math.floor(Date.now() / 1000));
+r = await upload(env, JPEG, { ts: now }); const reuse = upSig(now, JPEG);
+r = await upload(env, JPEG, { ts: now, sig: reuse }); ok(r.status === 403, "an upload signature works only once");
+const imgsBefore = [...env.STATE._m.keys()].filter((k) => k.startsWith("img:")).length;
+r = await upload(env, JPEG, { sig: upSig(now, JPEG, "other-secret") }); ok(r.status === 403, "wrong key rejected");
+r = await upload(env, JPEG, { sig: "" }); ok(r.status === 403, "unsigned upload rejected");
+const old = String(Math.floor(Date.now() / 1000) - 600);
+r = await upload(env, JPEG, { ts: old }); ok(r.status === 403, "signature older than 5 minutes rejected");
+const tsx = String(Math.floor(Date.now() / 1000));
+r = await worker.fetch(new Request("https://w.example/img", { method: "POST", body: Buffer.concat([JPEG, Buffer.from("x")]),
+  headers: { "x-fdc-time": tsx, "x-fdc-signature": upSig(tsx, JPEG) } }), env); ok(r.status === 403, "body changed after signing rejected");
+const png = Buffer.from("\x89PNG not a jpeg");
+r = await upload(env, png); ok(r.status === 415, "non-JPEG rejected");
+const big = Buffer.alloc(8 * 1024 * 1024 + 1); big[0] = 0xff; big[1] = 0xd8; big[2] = 0xff;
+r = await upload(env, big); ok(r.status === 413, "over 8 MB rejected");
+ok([...env.STATE._m.keys()].filter((k) => k.startsWith("img:")).length === imgsBefore, "rejected uploads store nothing");
+r = await worker.fetch(new Request("https://w.example/img"), env); ok(r.status === 405, "GET /img is 405");
+r = await worker.fetch(new Request("https://w.example/img", { method: "POST", body: JPEG, headers: { "x-fdc-time": now, "x-fdc-signature": upSig(now, JPEG) } }), { ...env, LINK_SECRET: "" });
+ok(r.status === 403, "no secret configured -> uploads refused");
+r = await get(env, upSig(now, JPEG)); ok(r.status === 404 || r.status === 400, "an upload signature is not an email link");
+env = { ...makeEnv(), IMAGE_HOURS: "6" };
+up = await (await upload(env, JPEG)).json();
+ok(up.expires_in_hours === 6 && env.STATE._o.get("img:" + up.url.match(/([0-9a-f]{32})\.jpg$/)[1]).expirationTtl === 6 * 3600, "IMAGE_HOURS changes how long images are kept");
+env = { ...makeEnv(), IMAGE_HOURS: "nonsense" }; up = await (await upload(env, JPEG)).json(); ok(up.expires_in_hours === 48, "bad IMAGE_HOURS falls back to 48");
 
 console.log(fails ? `\n${fails} FAILED` : "\nall worker checks passed"); process.exit(fails ? 1 : 0);

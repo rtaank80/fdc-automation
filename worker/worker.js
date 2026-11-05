@@ -3,6 +3,8 @@
 // Turns the buttons in the weekly approval email into GitHub Actions runs.
 //   GET  /a/<token>  shows a confirmation page (changes nothing, so mail scanners that open links are harmless)
 //   POST /c/<token>  the Confirm button: checks the link, then starts the right GitHub workflow
+//   POST /img        the publish job uploads the approved image (signed, see below); answers {"url": ...}
+//   GET  /img/<id>.jpg  serves an uploaded image so Instagram can fetch it. It is deleted after IMAGE_HOURS.
 //
 // Each link is signed in post_weekly.py / approval_email.py:
 //   token = base64url(JSON payload) + "." + base64url(HMAC-SHA256(LINK_SECRET, base64url(JSON payload)))
@@ -21,13 +23,24 @@
 //   DAILY_DRAFT  (text, optional) what the daily schedule does: "live" (default) a real draft, "test" a TEST
 //                draft that cannot post, "off" nothing
 //   DRAFT_UK_HOUR (text, optional) UK hour (0-23) at which the daily draft starts, default 10
+//   IMAGE_HOURS  (text, optional) hours an uploaded post image is kept before Cloudflare deletes it, default 48
 //
+// Image upload (IMAGE_HOST=cloudflare in publish.yml): the body is the JPEG itself, with headers
+//   X-FDC-Time       upload time (epoch seconds); must be within 5 minutes of the Worker's clock
+//   X-FDC-Signature  hex HMAC-SHA256(LINK_SECRET, "img-upload." + time + "." + hex SHA-256 of the body)
+// Each signature works once. The signed text contains dots, which a link token's signed part (base64url) never
+// does, so an upload signature can never be used as an email link or the other way round. The image is stored
+// in KV under a random name with an expiry, so Cloudflare deletes it by itself; the GitHub publish job keeps a
+// private archive copy in the repo's images/ folder.
+
 // Daily schedule (Cloudflare Cron Trigger, set by deploy-worker.yml): it fires at :00 and :30 of 09:00 and
 // 10:00 UTC. Only the fires in the chosen UK hour act, so the draft starts at 10:00 UK time in both GMT and BST;
 // the :30 fire is a retry for when GitHub refused the first one. KV key "daily:<UK date>" stops a second draft
 // on the same day. The draft it starts is a normal one: nothing is posted until the approver clicks Approve.
 
 const DAY = 86400;
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;   // Instagram's own limit for a JPEG
+const UPLOAD_WINDOW = 300;                 // seconds an upload signature stays valid
 
 const ACTIONS = {
   approve: { label: "Approve and post to Instagram" },
@@ -41,6 +54,9 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === "/") return page("FDC approvals", "The approval service is running.", 200);
+    if (url.pathname === "/img") return uploadImage(request, env, url);
+    const im = url.pathname.match(/^\/img\/([0-9a-f]{32})\.jpg$/);
+    if (im) return serveImage(request, env, im[1]);
 
     const m = url.pathname.match(/^\/(a|c)\/([A-Za-z0-9_.\-]+)$/);
     if (!m) return page("Not found", "This link is not valid.", 404);
@@ -173,6 +189,63 @@ async function dispatch(env, workflowFile, inputs) {
     body: JSON.stringify({ ref: env.GH_REF || "main", inputs }),
   });
   if (r.status !== 204) throw new Error(`GitHub ${r.status}: ${(await r.text()).slice(0, 120)}`);
+}
+
+// ---------------------------------------------------------------- post images
+const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+
+function imageHours(env) {
+  const h = parseInt(env.IMAGE_HOURS || "48", 10);
+  return Number.isFinite(h) && h >= 1 ? Math.min(h, 24 * 30) : 48;
+}
+
+async function uploadImage(request, env, url) {
+  const json = (obj, status) => new Response(JSON.stringify(obj), {
+    status, headers: { "content-type": "application/json", "cache-control": "no-store" },
+  });
+  if (request.method !== "POST") return json({ error: "method not allowed" }, 405);
+  if (!env.LINK_SECRET) return json({ error: "not configured" }, 403);
+  const ts = String(request.headers.get("x-fdc-time") || "");
+  const sig = String(request.headers.get("x-fdc-signature") || "").toLowerCase();
+  if (!/^\d{9,11}$/.test(ts) || !/^[0-9a-f]{64}$/.test(sig)) return json({ error: "not signed" }, 403);
+  if (Math.abs(Date.now() / 1000 - Number(ts)) > UPLOAD_WINDOW) return json({ error: "signature expired" }, 403);
+  const declared = parseInt(request.headers.get("content-length") || "0", 10);
+  if (declared > MAX_IMAGE_BYTES) return json({ error: "too large" }, 413);
+  const body = await request.arrayBuffer();
+  if (body.byteLength > MAX_IMAGE_BYTES) return json({ error: "too large" }, 413);
+  const enc = new TextEncoder();
+  const digest = hex(await crypto.subtle.digest("SHA-256", body));
+  const key = await crypto.subtle.importKey("raw", enc.encode(env.LINK_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
+  const sigBytes = Uint8Array.from(sig.match(/../g), (h) => parseInt(h, 16));
+  // crypto.subtle.verify compares in constant time
+  if (!(await crypto.subtle.verify("HMAC", key, sigBytes, enc.encode(`img-upload.${ts}.${digest}`)))) {
+    return json({ error: "bad signature" }, 403);
+  }
+  const bytes = new Uint8Array(body);
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) return json({ error: "not a JPEG" }, 415);
+  const usedKey = `upsig:${sig}`;
+  if (await env.STATE.get(usedKey)) return json({ error: "signature already used" }, 403);
+  await env.STATE.put(usedKey, "1", { expirationTtl: 2 * UPLOAD_WINDOW });
+  const id = hex(crypto.getRandomValues(new Uint8Array(16)));
+  const hours = imageHours(env);
+  await env.STATE.put(`img:${id}`, body, { expirationTtl: hours * 3600 });
+  return json({ url: `${url.origin}/img/${id}.jpg`, expires_in_hours: hours }, 200);
+}
+
+async function serveImage(request, env, id) {
+  if (request.method !== "GET" && request.method !== "HEAD") return new Response("Method not allowed", { status: 405 });
+  const body = await env.STATE.get(`img:${id}`, "arrayBuffer");
+  if (!body) return new Response("Not found", { status: 404, headers: { "cache-control": "no-store" } });
+  return new Response(request.method === "HEAD" ? null : body, {
+    status: 200,
+    headers: {
+      "content-type": "image/jpeg",
+      "content-length": String(body.byteLength),
+      "cache-control": "public, max-age=600",
+      "x-content-type-options": "nosniff",
+      "x-robots-tag": "noindex",
+    },
+  });
 }
 
 // ---------------------------------------------------------------- token checking

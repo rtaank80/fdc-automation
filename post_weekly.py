@@ -15,6 +15,8 @@ from __future__ import annotations
 import argparse
 import base64
 import datetime as dt
+import hashlib
+import hmac
 import io
 import json
 import os
@@ -684,8 +686,16 @@ def cmd_generate(args: argparse.Namespace) -> None:
 
 # ---------------------------------------------------------------- hosting
 def host_image(path: Path) -> str:
-    """Instagram needs a public https URL for the image. Uses a public GitHub repo (default) or imgbb."""
+    """Instagram needs a public https URL for the image.
+
+    IMAGE_HOST=cloudflare  upload to the approval Worker, which serves it and deletes it after 48 hours (default
+                           there; Worker setting IMAGE_HOURS). Works with a private repo.
+    IMAGE_HOST=github      commit to images/ and use GitHub's download link. Needs a PUBLIC repo.
+    IMAGE_HOST=imgbb       upload to imgbb (needs IMGBB_API_KEY).
+    """
     mode = os.getenv("IMAGE_HOST", "github")
+    if mode == "cloudflare":
+        return _host_on_worker(path)
     if mode == "imgbb":
         key = os.getenv("IMGBB_API_KEY") or sys.exit("IMGBB_API_KEY is not set")
         r = requests.post(
@@ -696,28 +706,80 @@ def host_image(path: Path) -> str:
         r.raise_for_status()
         return r.json()["data"]["url"]
     if mode == "github":
-        # Commits the image into the repo (images/ folder). The repo must be PUBLIC so Instagram can fetch it.
-        # In Actions, GITHUB_REPOSITORY and GITHUB_TOKEN are provided automatically (needs contents: write).
-        repo = os.environ["GITHUB_REPOSITORY"]
-        token = os.environ["GITHUB_TOKEN"]
-        name = f"images/{dt.date.today().isoformat()}.jpg"
-        api = f"https://api.github.com/repos/{repo}/contents/{name}"
-        h = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
-        body = {"message": f"Add post image {name}", "content": base64.b64encode(path.read_bytes()).decode()}
-        existing = requests.get(api, headers=h, timeout=30)
-        if existing.status_code == 200:  # re-run on the same day: overwrite
-            body["sha"] = existing.json()["sha"]
-        r = requests.put(api, headers=h, json=body, timeout=60)
-        if r.status_code >= 400:
-            sys.exit(f"Could not save image to GitHub: {r.status_code} {r.text[:400]}")
-        url = r.json()["content"]["download_url"]
-        # Fail early (with a clear message) if the repo is private and Instagram could not fetch it.
-        for _ in range(6):
-            if requests.head(url, timeout=30).status_code == 200:
-                return url
-            time.sleep(5)
-        sys.exit(f"Image saved but is not publicly reachable at {url}. Is the repository public?")
+        # The repo must be PUBLIC so Instagram can fetch the image from GitHub.
+        url = _commit_to_repo(path)
+        _wait_until_public(url, "Is the repository public? With a private repository set IMAGE_HOST to cloudflare.")
+        return url
     sys.exit(f"Unknown IMAGE_HOST '{mode}'")
+
+
+def _wait_until_public(url: str, hint: str) -> None:
+    """Fail early, with a clear message, if Instagram would not be able to fetch the image."""
+    for _ in range(6):
+        if requests.head(url, timeout=30).status_code == 200:
+            return
+        time.sleep(5)
+    sys.exit(f"Image saved but is not publicly reachable at {url}. {hint}")
+
+
+def _commit_to_repo(path: Path) -> str:
+    """Commit the image into the repo's images/ folder and return GitHub's download link.
+
+    In Actions, GITHUB_REPOSITORY and GITHUB_TOKEN are provided automatically (needs contents: write).
+    """
+    repo = os.environ["GITHUB_REPOSITORY"]
+    token = os.environ["GITHUB_TOKEN"]
+    name = f"images/{dt.date.today().isoformat()}.jpg"
+    api = f"https://api.github.com/repos/{repo}/contents/{name}"
+    h = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+    body = {"message": f"Add post image {name}", "content": base64.b64encode(path.read_bytes()).decode()}
+    existing = requests.get(api, headers=h, timeout=30)
+    if existing.status_code == 200:  # re-run on the same day: overwrite
+        body["sha"] = existing.json()["sha"]
+    r = requests.put(api, headers=h, json=body, timeout=60)
+    if r.status_code >= 400:
+        sys.exit(f"Could not save image to GitHub: {r.status_code} {r.text[:400]}")
+    return r.json()["content"]["download_url"]
+
+
+def upload_signature(key: str, ts: str, data: bytes) -> str:
+    """Signature the Worker checks on POST /img (see worker/worker.js)."""
+    msg = f"img-upload.{ts}.{hashlib.sha256(data).hexdigest()}"
+    return hmac.new(key.encode("utf-8"), msg.encode("ascii"), hashlib.sha256).hexdigest()
+
+
+def _host_on_worker(path: Path) -> str:
+    base = (os.getenv("APPROVAL_BASE_URL") or sys.exit("APPROVAL_BASE_URL is not set")).rstrip("/")
+    key = os.getenv("LINK_SECRET") or sys.exit("LINK_SECRET is not set")
+    data = path.read_bytes()
+    ts = str(int(time.time()))
+    headers = {"Content-Type": "image/jpeg", "X-FDC-Time": ts, "X-FDC-Signature": upload_signature(key, ts, data)}
+    r = requests.post(f"{base}/img", data=data, headers=headers, timeout=60)
+    if r.status_code != 200:
+        sys.exit(f"The approval Worker did not accept the image: {r.status_code} {r.text[:300]}. "
+                 "Check the Worker has been deployed with the image upload (Actions > Deploy approval Worker).")
+    url = r.json().get("url", "")
+    if not url.startswith(base + "/img/"):
+        sys.exit(f"The approval Worker returned an unexpected image address: {url[:200]}")
+    _wait_until_public(url, "Check the approval Worker is running.")
+    return url
+
+
+def archive_image(path: Path) -> None:
+    """Keep a copy of the posted image in the repo's images/ folder (private once the repo is private).
+
+    Only for hosts other than github, which already commits it. Never stops the job: the post is already live.
+    """
+    if os.getenv("IMAGE_HOST", "github") == "github":
+        return
+    if not (os.getenv("GITHUB_REPOSITORY") and os.getenv("GITHUB_TOKEN")):
+        log("Archive copy skipped (not running in GitHub Actions)")
+        return
+    try:
+        _commit_to_repo(path)
+        log("Archive copy saved in images/")
+    except (SystemExit, Exception) as exc:  # noqa: BLE001
+        print(f"::warning::The post is live, but the archive copy in images/ could not be saved: {exc}")
 
 
 # ---------------------------------------------------------------- instagram
@@ -774,6 +836,7 @@ def cmd_publish(args: argparse.Namespace) -> None:
     log(f"Image hosted at {url}")
     media_id = publish_to_instagram(url, chosen["caption"], chosen["alt_text"])
     log(f"Published to Instagram. Media id: {media_id}")
+    archive_image(OUT / image["file"])
 
 
 def cmd_refresh(args: argparse.Namespace) -> None:

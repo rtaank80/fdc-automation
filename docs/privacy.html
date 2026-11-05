@@ -23,7 +23,7 @@
 <body>
 <main>
 <h1>Privacy Policy</h1>
-<p class="meta">FDC Instagram Poster &middot; Last updated: 23 October 2026</p>
+<p class="meta">FDC Instagram Poster &middot; Last updated: 5 November 2026</p>
 
 <h2>1. Who we are</h2>
 <p>This policy covers the "FDC Instagram Poster" app (the "App"), operated by <strong>FDC Cosmetics &amp; Whitening, part of Family Dental Centre</strong>, 404 Kingstanding Road, Birmingham, B44 8LD, United Kingdom ("we", "us").</p>
@@ -50,16 +50,16 @@
 <table>
   <tr><th>Provider</th><th>Purpose</th><th>What is sent</th></tr>
   <tr><td>Meta (Instagram)</td><td>Publishing our post</td><td>Image, caption, alt text, access token</td></tr>
-  <tr><td>Cloudflare</td><td>Generating the illustrative image and a draft caption (Workers AI), and running the small service that receives the approver's button clicks</td><td>A text description of the image, the post topic and our brand guidelines; a signed approval link when a button is clicked</td></tr>
+  <tr><td>Cloudflare</td><td>Generating the illustrative image and a draft caption (Workers AI), running the small service that receives the approver's button clicks, and briefly holding the approved post image so Instagram can fetch it</td><td>A text description of the image, the post topic and our brand guidelines; a signed approval link when a button is clicked; the approved post image</td></tr>
   <tr><td>Anthropic (optional)</td><td>Drafting a caption</td><td>The post topic and our brand guidelines</td></tr>
   <tr><td>UK2 (our email provider)</td><td>Sending the weekly approval email to the approver</td><td>The draft image and captions, and the approver's email address</td></tr>
-  <tr><td>GitHub</td><td>Running the weekly schedule, keeping drafts temporarily, storing the approved post image so Instagram can fetch it, and storing access keys as encrypted secrets</td><td>Drafts, the approved image and the access token</td></tr>
+  <tr><td>GitHub</td><td>Running the weekly schedule, keeping drafts temporarily, keeping a copy of each approved post image, and storing access keys as encrypted secrets</td><td>Drafts, the approved image and the access token</td></tr>
 </table>
 
 <h2>6. Storage and retention</h2>
 <ul>
   <li>The access token is stored as an encrypted secret and is kept until we revoke it or remove the App.</li>
-  <li>Draft posts are kept as workflow records on GitHub for 7 days and then deleted. Approval links expire after 5 days, and the Cloudflare service keeps only a short record that a link has been used (no post content), for up to 14 days.</li>
+  <li>Draft posts are kept as workflow records on GitHub for 7 days and then deleted. Approval links expire after 5 days, and the Cloudflare service keeps only a short record that a link has been used (no post content), for up to 14 days. The approved post image is held by the Cloudflare service for 48 hours, long enough for Instagram to fetch it, and then deleted automatically.</li>
   <li>Published posts remain on our Instagram account until we delete them.</li>
 </ul>
 
