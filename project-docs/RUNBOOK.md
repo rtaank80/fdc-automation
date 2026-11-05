@@ -17,6 +17,18 @@ One-off setup for this: create a Cloudflare API token (My Profile > API Tokens >
 ## Rotating `LINK_SECRET`
 Change the GitHub secret and the Worker secret to the same new value. Links in emails sent before the change stop working.
 
+## Making the repo private
+Do the steps in this order; the repo must stay public until steps 1 to 3 are done.
+1. **Post images off GitHub.** Set the GitHub variable `IMAGE_HOST=cloudflare` (needs the Worker deployed with the `/img` upload; done 5 Nov 2026). Approve one real draft and check it posts; the publish log shows the `/img/...jpg` link and "Archive copy saved in images/". If Instagram refuses the Worker link, `IMAGE_HOST=imgbb` with the secret `IMGBB_API_KEY` is the fallback.
+2. **Privacy page off GitHub Pages.** GitHub Pages needs a paid plan for a private repo. Move `docs/privacy.html` (for example to the Worker at `/privacy`), check it loads, then change the **Privacy Policy URL** and **Data Deletion URL** in the Meta developer dashboard (App settings > Basic).
+3. **Tokens.** In GitHub > Settings > Developer settings > Fine-grained tokens, check `GH_TOKEN` (Worker) and `GH_PAT` (token refresh) are set to "Only select repositories" with this repo. A "Public repositories" token stops working when the repo goes private.
+4. **Billing guard.** Private repos get 2,000 free Actions minutes a month (public repos have no limit). Normal use is about 200 to 400. A draft that waits out Cloudflare's daily allowance can run up to 180 minutes, so set the Actions spending limit to 0 (Settings > Billing) so runs stop rather than charge.
+5. **Flip it.** Settings > General > Danger Zone > Change visibility > Private. Then turn off Settings > Pages.
+6. **Check.** The next daily draft arrives, a regeneration button works, an approval posts, and the Meta app still shows the privacy URL as valid.
+7. **Update docs.** `CLAUDE.md` ("The repo is public" section), `README.md` setup step 1, `project-docs/DECISIONS.md`.
+
+Making it private does not remove anything already public: earlier clones and forks keep their copies.
+
 ## Troubleshooting
 | Symptom | Cause and fix |
 |---|---|
