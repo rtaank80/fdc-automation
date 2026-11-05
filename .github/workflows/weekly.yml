@@ -54,6 +54,9 @@ permissions:
 jobs:
   generate:
     runs-on: ubuntu-latest
+    # Normally about a minute. If Cloudflare refuses with its "daily allowance used up" message, the draft
+    # waits 30, 45 and 60 minutes between attempts (post_weekly.py LIMIT_WAITS_MIN), so allow up to 3 hours.
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6

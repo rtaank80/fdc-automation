@@ -105,3 +105,16 @@ try: pw._cloudflare_image("p", "@cf/leonardo/lucid-origin")
 except SystemExit: pass
 assert sleeps == []
 ok("a 400 error is not retried")
+LIMIT_TEXT = ('{"errors":[{"message":"AiError: AiError: you have used up your daily free allocation of 10,000 neurons, '
+              'please upgrade to Cloudflare\'s Workers Paid plan if you would like to continue usage. (x)","code":4006}],'
+              '"success":false,"result":{},"messages":[]}')
+class Rlim(R):
+    status_code = 429; text = LIMIT_TEXT
+requests.post = lambda url, **kw: Rlim(); sleeps.clear()
+try: pw._cloudflare_image("p", "@cf/leonardo/lucid-origin"); raise AssertionError("should raise")
+except pw.CloudflareLimitError as e: assert "daily free allowance" in str(e)
+assert sleeps == []
+ok("the 'daily allowance used up' 429 (code 4006) stops the quick retries straight away")
+assert pw.is_limit_error(429, '{"code": 3036}') and not pw.is_limit_error(429, "Too many requests") \
+    and not pw.is_limit_error(500, LIMIT_TEXT)
+ok("an ordinary 429 is still treated as temporary")

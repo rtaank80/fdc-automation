@@ -138,3 +138,53 @@ assert "lovable.app" not in pw.fallback_caption(cfg, th)["caption"] and "link in
 _, prompt = pw._prompts(cfg, th)
 assert "300-600 characters" in prompt and "lovable.app" not in prompt and "Do NOT include any website" in prompt, prompt
 print("11 ok: URLs are removed from captions, the account name stays")
+
+# ---- 12. Cloudflare "daily allowance used up": wait 30, 45, 60 minutes, then give up and email the approver
+waits = []; pw.time.sleep = lambda s: waits.append(s)
+tries = {"n": 0}
+def limited_img(fail_rounds):
+    def f(cfg, theme, path, dry, variation="", person=None, label="", letter="A"):
+        tries["n"] += 1
+        if (tries["n"] + 1) // 2 <= fail_rounds:  # two images per round
+            raise pw.CloudflareLimitError("Cloudflare refused: daily free allowance used up")
+        pw.make_placeholder(theme, path, label); return "prompt"
+    return f
+reset(); os.environ["MODE"] = "new"; os.environ["REGENS_USED"] = "0"; tries["n"] = 0; n_sent = len(sent)
+pw.generate_image = limited_img(2)
+cf_calls = []
+real_cf = pw.cloudflare_caption
+pw.cloudflare_caption = lambda cfg, theme, avoid=None: (cf_calls.append(1), None if len(cf_calls) == 1 else good("cf"))[1]
+pw.cmd_generate(ns(False))
+pw.cloudflare_caption = real_cf
+assert waits == [30 * 60, 45 * 60], waits
+d = json.loads((pw.OUT/"draft.json").read_text())
+assert len(cf_calls) == 2 and [c["number"] for c in d["candidates"]] == [1, 2], "AI caption retried after the wait"
+assert len(d["images"]) == 2 and len(sent) == n_sent + 1 and "Approve" in sent[-1][0]["Subject"]
+print("12 ok: refused twice, then made after waiting 30 and 45 minutes; normal approval email sent")
+
+reset(); waits.clear(); tries["n"] = 0; n_sent = len(sent)
+pw.generate_image = limited_img(99)
+os.environ.update(CLOUDFLARE_ACCOUNT_ID="acct-secret-42", GITHUB_REPOSITORY="owner/repo", GITHUB_RUN_ID="777")
+sys.argv = ["post_weekly.py", "generate"]
+try: pw.main(); raise AssertionError("should exit")
+except SystemExit as e: assert "after waiting 30, 45, 60 minutes" in str(e.code), e.code
+assert waits == [30 * 60, 45 * 60, 60 * 60], waits
+assert tries["n"] == 8, tries  # first try + 3 retries, two images each
+fail = sent[-1][0]; body = fail.get_content()
+assert len(sent) == n_sent + 1 and fail["Subject"] == "Today's Instagram draft could not be made", fail["Subject"]
+assert fail["To"] == "approver@example.com" and "Nothing has been posted" in body and "Run workflow" in body
+assert "https://github.com/owner/repo/actions/runs/777" in body and "daily free allowance" in body
+print("13 ok: still refused after 30, 45 and 60 minutes; the run fails and the approver gets a failure email")
+
+reset(); n_sent = len(sent)
+sys.argv = ["post_weekly.py", "generate", "--dry-run"]
+pw.generate_image = lambda *a, **k: (_ for _ in ()).throw(SystemExit("boom acct-secret-42"))
+try: pw.main()
+except SystemExit: pass
+assert len(sent) == n_sent, "no failure email for a dry run"
+pw.notify_failure("boom acct-secret-42")
+assert "acct-secret-42" not in sent[-1][0].get_content() and "boom ***" in sent[-1][0].get_content()
+os.environ["MODE"] = "image"; pw.notify_failure("x")
+assert sent[-1][0]["Subject"] == "The new version you asked for could not be made"
+os.environ["MODE"] = "new"
+print("14 ok: no failure email for test runs; secrets are blanked out; regenerations get their own wording")

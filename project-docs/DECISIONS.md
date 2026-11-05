@@ -31,6 +31,7 @@ What was decided while building this, and why. Newest decisions are lower in eac
 
 ## Schedule
 - **Daily draft** at `23 10 * * *` UTC. The minute is off the hour because GitHub delays jobs at the top of the hour (a 10:00 run once started at about 16:00). GitHub still ran it 5 to 6.5 hours late and skipped 3 of 7 days in late October 2026, so the draft is now started by the Worker's Cloudflare Cron Trigger at 10:00 UK all year (fires at 09:00 and 10:00 UTC and acts only in the UK hour, so no edits at the clock changes). The GitHub cron was kept briefly as a backup, then removed on 3 Nov 2026 at the owner's request: its late runs made unwanted extra drafts and used up the Workers AI free allowance. A failed day is now handled by a manual run.
+- **Waiting out Cloudflare's "daily allowance used up" refusals** (5 Nov 2026, owner's choice). On 3 and 5 Nov the 10:00 draft was refused with 429 code 4006 while the dashboard showed no usage; a manual run later the same day worked. Quick retries cannot help, so the draft waits 30, 45 and 60 minutes before giving up (`LIMIT_WAITS_MIN`, job timeout 180 minutes). Any real draft that fails emails the approver, so a missed day is noticed. Test runs never send it.
 
 ## Privacy
 - The privacy policy page is `docs/privacy.html`. It mentions Cloudflare, the email provider, the approver email, 7-day draft retention and link expiry. Update it if data handling changes.

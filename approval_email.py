@@ -332,3 +332,35 @@ def send(msg: EmailMessage, host: str, port: int, user: str, password: str) -> N
         ) from None
     except (smtplib.SMTPException, OSError) as exc:
         raise RuntimeError(f"Could not send the email via {host}:{port}: {type(exc).__name__}: {exc}") from None
+
+
+def build_failure_message(reason: str, run_url: str, mode: str, to_addr: str, from_addr: str,
+                          from_name: str = "FDC Instagram approvals") -> EmailMessage:
+    """A short plain-text email saying a draft could not be made and what to do."""
+    if mode == "new":
+        subject = "Today's Instagram draft could not be made"
+        first = "Today's Instagram draft could not be made, so there is nothing to approve today."
+    else:
+        subject = "The new version you asked for could not be made"
+        first = f"The regeneration you asked for ({mode}) could not be made."
+    lines = [
+        first,
+        "",
+        f"Reason: {reason}",
+        "",
+        "Nothing has been posted.",
+        "",
+        "To make a new draft by hand: on GitHub open the repository, then Actions > Weekly Instagram draft > "
+        "Run workflow, leave \"Dry run\" unticked and press Run workflow. The approval email follows in a "
+        "minute or two.",
+    ]
+    if run_url:
+        lines += ["", f"Details of the failed run: {run_url}"]
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = formataddr((from_name, from_addr))
+    msg["To"] = to_addr
+    msg["Date"] = formatdate(localtime=False)
+    msg["Message-ID"] = make_msgid(domain=from_addr.split("@")[-1])
+    msg.set_content("\n".join(lines))
+    return msg

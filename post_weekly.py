@@ -56,6 +56,22 @@ VARIATIONS = [
 ]
 
 
+# Cloudflare sometimes refuses every request with "you have used up your daily free allocation of 10,000
+# neurons" (code 4006), even when its dashboard shows no usage. Retrying within minutes does not help, but
+# later it works again. So when no image could be made for that reason, the draft waits and tries again:
+# first after 30 minutes, then 45, then 60. If all three fail, the run stops and the approver is emailed.
+LIMIT_WAITS_MIN = [30, 45, 60]
+
+
+class CloudflareLimitError(RuntimeError):
+    """Cloudflare refused the request with its 'daily free allocation used up' message."""
+
+
+def is_limit_error(status: int, text: str) -> bool:
+    compact = text.replace(" ", "")
+    return status == 429 and ("daily free allocation" in text or '"code":4006' in compact or '"code":3036' in compact)
+
+
 def log(msg: str) -> None:
     print(f"[{dt.datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
 
@@ -352,6 +368,8 @@ def _cloudflare_image(prompt: str, model: str) -> bytes:
             err = str(e)[:200]
         else:
             err = f"{r.status_code} {r.text[:200]}"
+            if is_limit_error(r.status_code, r.text):  # quick retries cannot help; cmd_generate waits longer
+                raise CloudflareLimitError(f"Cloudflare refused: daily free allowance used up ({r.text[:300]})")
         temporary = r is None or r.status_code >= 500 or r.status_code == 429
         if not temporary or attempt == len(waits):
             break
@@ -535,6 +553,33 @@ def send_approval_email(draft: dict, images: dict, dry_run: bool) -> None:
     log("Approval email sent.")
 
 
+def notify_failure(reason: str) -> None:
+    """Email the approver when a real draft could not be made, so a missed day is noticed."""
+    needed = ["APPROVER_EMAIL", "SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD"]
+    if any(not os.getenv(n) for n in needed):
+        log("Failure email NOT sent (email settings missing).")
+        return
+    for name in ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "LINK_SECRET", "SMTP_PASSWORD",
+                 "OPENAI_API_KEY", "GITHUB_TOKEN"):  # never put a secret in an email
+        if os.getenv(name):
+            reason = reason.replace(os.environ[name], "***")
+    repo = os.getenv("GITHUB_REPOSITORY")
+    run_id = os.getenv("GITHUB_RUN_ID") or os.getenv("DRAFT_RUN_ID")
+    run_url = (f"{os.getenv('GITHUB_SERVER_URL') or 'https://github.com'}/{repo}/actions/runs/{run_id}"
+               if repo and run_id else "")
+    msg = approval_email.build_failure_message(
+        reason, run_url, mode=(os.getenv("MODE") or "new").strip().lower(),
+        to_addr=os.environ["APPROVER_EMAIL"], from_addr=os.getenv("MAIL_FROM") or os.environ["SMTP_USER"],
+    )
+    try:
+        approval_email.send(msg, os.environ["SMTP_HOST"], int(os.getenv("SMTP_PORT") or 587),
+                            os.environ["SMTP_USER"], os.environ["SMTP_PASSWORD"])
+    except RuntimeError as exc:
+        log(f"Failure email could not be sent either: {exc}")
+        return
+    log("Failure email sent to the approver.")
+
+
 def cmd_generate(args: argparse.Namespace) -> None:
     cfg = load_config()
     mode = (os.getenv("MODE") or "new").strip().lower()
@@ -555,8 +600,8 @@ def cmd_generate(args: argparse.Namespace) -> None:
             sys.exit(f"Theme '{prev['theme']}' is no longer in themes.json or calendar.json")
     log(f"Mode '{mode}', theme: {theme['id']} ({theme['topic']})")
 
+    avoid = [c["caption"] for c in prev["candidates"]] if prev else None
     if mode in ("new", "captions", "all"):
-        avoid = [c["caption"] for c in prev["candidates"]] if prev else None
         candidates = build_candidates(cfg, theme, args.dry_run, avoid)
         if not candidates:
             sys.exit("No caption passed the compliance check.")
@@ -575,6 +620,8 @@ def cmd_generate(args: argparse.Namespace) -> None:
         regen = mode != "new"  # a regenerated image also gets a random twist so it differs from the old one
         phrases = random.sample(VARIATIONS, len(LETTERS)) if regen else [""] * len(LETTERS)
 
+        limited: list[str] = []  # images that Cloudflare refused with its "daily allowance" message
+
         def make(i: int) -> dict | None:
             letter = LETTERS[i]
             fname = f"image-{letter.lower()}.jpg"
@@ -583,14 +630,37 @@ def cmd_generate(args: argparse.Namespace) -> None:
             try:
                 prompt = generate_image(cfg, theme, OUT / fname, args.dry_run, variation=phrases[i],
                                         person=person, label=f"IMAGE {letter}", letter=letter)
+            except CloudflareLimitError as exc:
+                limited.append(letter)
+                log(f"WARNING: image {letter} failed ({exc}).")
+                return None
             except SystemExit as exc:  # one image failing should not lose the other
                 log(f"WARNING: image {letter} failed ({exc}); continuing without it.")
                 return None
             return {"id": letter, "file": fname, "person": person, "prompt": prompt}
 
-        with ThreadPoolExecutor(max_workers=len(LETTERS)) as pool:  # both images at the same time
-            images = [im for im in pool.map(make, range(len(LETTERS))) if im]
+        def make_all() -> list[dict]:
+            limited.clear()
+            with ThreadPoolExecutor(max_workers=len(LETTERS)) as pool:  # both images at the same time
+                return [im for im in pool.map(make, range(len(LETTERS))) if im]
+
+        images = make_all()
+        for attempt, wait in enumerate(LIMIT_WAITS_MIN, start=1):
+            if images or not limited:
+                break
+            log(f"Cloudflare says the daily allowance is used up. Waiting {wait} minutes, then trying again "
+                f"(attempt {attempt} of {len(LIMIT_WAITS_MIN)}).")
+            time.sleep(wait * 60)
+            if mode != "image" and not args.dry_run and not any(c["id"] == "cloudflare" for c in candidates):
+                # the AI caption was most likely refused for the same reason, so try it again too
+                candidates = build_candidates(cfg, theme, args.dry_run, avoid) or candidates
+                log("Caption options: " + ", ".join(f"{c['number']}={c['label']}" for c in candidates))
+            images = make_all()
         if not images:
+            if limited:
+                waits = ", ".join(str(w) for w in LIMIT_WAITS_MIN)
+                sys.exit("Neither image could be generated: Cloudflare kept saying the daily free allowance "
+                         f"was used up, also after waiting {waits} minutes.")
             sys.exit("Neither image could be generated.")
 
     draft = {
@@ -738,7 +808,15 @@ def main() -> None:
     p.add_argument("--dry-run", action="store_true", help="No paid API calls (generate) or no real post (publish)")
     p.add_argument("--out", help="refresh only: file to write the new token to")
     args = p.parse_args()
-    {"generate": cmd_generate, "publish": cmd_publish, "refresh": cmd_refresh}[args.stage](args)
+    if args.stage == "generate":
+        try:
+            cmd_generate(args)
+        except SystemExit as exc:
+            if exc.code not in (None, 0) and not args.dry_run:
+                notify_failure(str(exc.code))
+            raise
+        return
+    {"publish": cmd_publish, "refresh": cmd_refresh}[args.stage](args)
 
 
 if __name__ == "__main__":
