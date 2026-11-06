@@ -42,13 +42,33 @@ ok(f"{len(ids)} themes, all with two person scenes and unique ids")
 
 # ---- rotation
 regular = {t["id"] for t in cfg["themes"]}
+assert cfg["calendar"]["settings"]["rotation"] == "posts" and sorted(cfg["calendar"]["settings"]["post_days"]) == ["sun", "thu"]
+year = [dt.date(2026, 11, 1) + dt.timedelta(days=i) for i in range(365)]
+post_days = [d for d in year if d.strftime("%a").lower() in ("sun", "thu")]
+assert len(post_days) in (104, 105)
+picks = [pw.pick_theme(cfg, d) for d in post_days]
+seen = collections.Counter(t["id"] for t in picks)
+seasonal = sum(t["id"] not in regular for t in picks)
+assert all(seen[i] >= 4 for i in regular), seen
+assert 0.30 < seasonal / len(picks) < 0.40, seasonal
+ok("a year of Sunday and Thursday posts: all normal themes used, about one in three seasonal")
+for a, b in zip(picks, picks[1:]):
+    assert a["id"] != b["id"] or a.get("pin"), (a["id"], b["id"])
+ok("two posts in a row never share a theme (unless a pinned awareness day covers both)")
+nums = [pw.post_number(d, ["sun", "thu"]) for d in post_days]
+assert nums == list(range(nums[0], nums[0] + len(nums))), "draft days are numbered one after another"
+assert pw.pick_theme(cfg, dt.date(2026, 11, 10))["id"] == pw.pick_theme(cfg, dt.date(2026, 11, 8))["id"]
+ok("themes move on one step per post; a hand-run draft on Tuesday repeats Sunday's theme")
+assert pw.post_number(dt.date(2026, 11, 3), []) == dt.date(2026, 11, 3).toordinal()
+assert pw.post_number(dt.date(2026, 11, 3), ["Monday", "nonsense"]) == pw.post_number(dt.date(2026, 11, 2), ["mon"])
+daily_cfg = {**cfg, "calendar": {**cfg["calendar"], "settings": {**cfg["calendar"]["settings"], "rotation": "daily"}}}
 seen, seasonal = collections.Counter(), 0
-for i in range(365):
-    t = pw.pick_theme(cfg, dt.date(2026, 11, 1) + dt.timedelta(days=i))
+for d in year:
+    t = pw.pick_theme(daily_cfg, d)
     seen[t["id"]] += 1; seasonal += t["id"] not in regular
 assert all(seen[i] >= 15 for i in regular), "every normal theme gets used"
 assert 0.30 < seasonal / 365 < 0.38, seasonal
-ok("a year of picks: all normal themes used, about one in three seasonal")
+ok("rotation \"daily\" still works: a year of daily picks uses every theme, about one in three seasonal")
 assert pw.pick_theme(cfg, dt.date(2027, 3, 19))["id"] == "world-oral-health-day" and pw.pick_theme(cfg, dt.date(2027, 3, 20))["id"] == "world-oral-health-day"
 ok("a pinned theme takes every post in its window")
 for m, es in cfg["calendar"]["months"].items():

@@ -122,6 +122,23 @@ def iso_week(today: dt.date | None = None) -> str:
     return f"{year}-W{week:02d}"
 
 
+WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+
+def post_number(today: dt.date, post_days: list[str]) -> int:
+    """Counts the draft days (post_days, e.g. ["sun", "thu"]) up to and including today.
+
+    Consecutive draft days get consecutive numbers, so the themes rotate one step per post. A day that is not a
+    draft day (a draft started by hand) gets the number of the most recent draft day, so it repeats that theme;
+    that suits re-running a draft day whose scheduled run failed. With no valid days, every day counts.
+    """
+    days = sorted({WEEKDAYS.index(d[:3].lower()) for d in post_days if str(d)[:3].lower() in WEEKDAYS})
+    if not days:
+        return today.toordinal()
+    weeks = (today.toordinal() - 1) // 7  # day 1 (1 Jan of year 1) was a Monday, so weeks start on Mondays
+    return weeks * len(days) + sum(1 for d in days if d <= today.weekday())
+
+
 def pick_theme(cfg: dict, today: dt.date | None = None) -> dict:
     """Choose today's theme, or force one with THEME_ID.
 
@@ -137,9 +154,12 @@ def pick_theme(cfg: dict, today: dt.date | None = None) -> dict:
     today = today or london_today()
     settings = (cfg.get("calendar") or {}).get("settings") or {}
     n = int(settings.get("seasonal_every", 0) or 0)
-    if settings.get("rotation", "daily") == "weekly":
+    rotation = settings.get("rotation", "daily")
+    if rotation == "weekly":
         year, week, _ = today.isocalendar()
         unit = year * 53 + week
+    elif rotation == "posts":
+        unit = post_number(today, settings.get("post_days") or [])
     else:
         unit = today.toordinal()
     seasonal = seasonal_themes(cfg, today)

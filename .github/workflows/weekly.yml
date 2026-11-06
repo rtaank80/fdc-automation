@@ -1,16 +1,17 @@
 name: Weekly Instagram draft
 
-# Every day this makes a draft (up to 3 captions + an image) and emails it to the approver.
+# Each Sunday and Thursday this makes a draft (up to 3 captions + an image) and emails it to the approver.
 # Nothing is posted until the approver clicks Approve in that email; that starts publish.yml.
 # The same workflow is started by the approval Worker when the approver asks for new captions/image.
 #
-# The daily draft is started by the Worker's Cloudflare Cron Trigger at 10:00 UK time (see worker/worker.js),
+# The scheduled draft is started by the Worker's Cloudflare Cron Trigger at 10:00 UK time on Sundays and
+# Thursdays (DRAFT_DAYS, see worker/worker.js),
 # because GitHub's own schedule ran hours late or not at all. There is no GitHub schedule any more; this workflow
 # only runs when the Worker starts it or when it is run by hand (Actions > Run workflow).
 
 run-name: >-
-  ${{ inputs.source == 'cloudflare' && 'Daily draft (Cloudflare schedule)'
-  || inputs.source == 'cloudflare-test' && 'Daily draft (Cloudflare schedule, TEST)'
+  ${{ inputs.source == 'cloudflare' && 'Scheduled draft (Cloudflare schedule)'
+  || inputs.source == 'cloudflare-test' && 'Scheduled draft (Cloudflare schedule, TEST)'
   || inputs.mode && inputs.mode != 'new' && format('Regeneration ({0})', inputs.mode)
   || inputs.dry_run && 'Manual draft (TEST)'
   || 'Manual draft (live)' }}
@@ -43,7 +44,7 @@ on:
         type: boolean
         default: false
       source:
-        description: "Who started this run (set by the Worker's daily schedule; leave blank)"
+        description: "Who started this run (set by the Worker's schedule; leave blank)"
         required: false
         default: ""
 

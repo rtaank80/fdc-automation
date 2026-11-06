@@ -3,7 +3,7 @@
 Every week this prepares a post for **@fdc.dental**: an AI-generated cosmetic dentistry / whitening image and two caption choices that point people to the link in bio. The approver gets an email, picks a caption with one button, and only then does it post.
 
 ```
-Cloudflare Worker schedule (daily, 10:00 UK time) starts "Weekly Instagram draft" in GitHub Actions
+Cloudflare Worker schedule (Sundays and Thursdays, 10:00 UK time) starts "Weekly Instagram draft" in GitHub Actions
   -> pick theme -> 2 captions (Choice 1 template, Choice 2 Cloudflare AI) + two images (A and B, made at the same time)
   -> email to the approver: both images, each caption with an Approve button per image, and
      "new captions", "new images", "new everything" and "skip" buttons
@@ -40,7 +40,7 @@ Meta asks for a public Privacy Policy URL (and a Data Deletion URL) before an ap
 4. Check the contact details and wording are right for the practice before publishing.
 
 ### 3. Image and caption keys
-- **Cloudflare Workers AI** (images: FLUX.2 dev and Lucid Origin; caption Choice 2: Llama 3.3 70B). One draft a day normally fits in the free daily allowance; regenerations can go slightly over.
+- **Cloudflare Workers AI** (images: FLUX.2 dev and Lucid Origin; caption Choice 2: Llama 3.3 70B). One draft normally fits in the free daily allowance; regenerations can go slightly over.
   1. Sign up free at dash.cloudflare.com.
   2. Open **AI > Workers AI**, choose **Use REST API**, and copy your **Account ID**.
   3. Click **Create a Workers AI API Token**, accept the prefilled settings, create it and copy the token.
@@ -91,7 +91,7 @@ Repo > Settings > Secrets and variables > Actions.
 1. Actions > *Weekly Instagram draft* > **Run workflow** with *Dry run* ticked. A `[TEST]` email arrives at the approver address (check spam the first time; mark it "not spam").
 2. Click **Approve option 1**, then **Confirm**. The *Publish approved post* workflow starts and logs `DRY RUN`. Test drafts can never post, have no limits (so you can click approve, skip and regenerate as often as you like) and don't affect real drafts.
 3. When happy, run the first draft for real (*Dry run* unticked), approve a caption, and check @fdc.dental.
-4. After that it runs by itself every day at 10:00 UK time, started by the Worker's Cloudflare schedule. To pause it, set the Worker setting `DAILY_DRAFT` to `off` (or `test` for TEST drafts). Do not disable the workflow in GitHub: the Worker and the email buttons need it.
+4. After that it runs by itself every Sunday and Thursday at 10:00 UK time, started by the Worker's Cloudflare schedule. To pause it, set the Worker setting `DAILY_DRAFT` to `off` (or `test` for TEST drafts). Do not disable the workflow in GitHub: the Worker and the email buttons need it.
 
 ## Using the email
 - **Post with image A / image B** (under each Instagram Caption choice): one button per image under each caption; opens a confirmation page; **Confirm** starts the post (usually live within a couple of minutes).
@@ -102,10 +102,10 @@ Repo > Settings > Secrets and variables > Actions.
 
 ## Customising
 - `themes.json`: brand tone, image style and the 12 rotating topics. Edit freely, or force one with `THEME_ID`.
-- `calendar.json`: seasonal themes by month (new). The normal 12 themes in `themes.json` rotate by day. Every Nth post (`seasonal_every`, default 3; set 0 to turn seasonal posts off) is instead a seasonal theme for the current month, taking turns if the month has more than one. Each seasonal theme has the same fields as a normal one (`id`, `topic`, `angle`, `image`, `image_b`), plus optional `"days": [first, last]` to limit it to part of the month (for example Smile Month from 15 May) and `"pin": true` to make it take every post in those days (for example World Oral Health Day). `"rotation": "weekly"` makes the normal themes change weekly instead of daily. The dates of awareness days and months change, so check them each year. You can force any theme, normal or seasonal, with the `theme_id` box when running the workflow by hand.
+- `calendar.json`: seasonal themes by month (new). The normal 12 themes in `themes.json` rotate one step per post (`"rotation": "posts"`, counting the days in `"post_days"`, Sunday and Thursday). Every Nth post (`seasonal_every`, default 3; set 0 to turn seasonal posts off) is instead a seasonal theme for the current month, taking turns if the month has more than one. Each seasonal theme has the same fields as a normal one (`id`, `topic`, `angle`, `image`, `image_b`), plus optional `"days": [first, last]` to limit it to part of the month (for example Smile Month from 15 May) and `"pin": true` to make it take every post in those days (for example World Oral Health Day). `"rotation": "daily"` or `"weekly"` makes the normal themes change by calendar day or by week instead. The dates of awareness days and months change, so check them each year. You can force any theme, normal or seasonal, with the `theme_id` box when running the workflow by hand.
 - **Image A and image B:** they differ in three ways so they never look alike. Each uses a different model (A: FLUX.2 dev, B: Leonardo Lucid Origin; set in `models` in `themes.json`, or override with the repository variables `IMAGE_MODEL_A` and `IMAGE_MODEL_B`), a different scene (every theme has an `image` for A and an `image_b` for B) and a different look (`image_styles` A and B in `themes.json`). If one model fails, the email goes out with the image that worked. Other Cloudflare models that fit image B without code changes are `@cf/black-forest-labs/flux-1-schnell` and `@cf/leonardo/phoenix-1.0`; I could only confirm their input fields, so check the first result.
 - **Who appears in the images:** every image shows a person, smiling or laughing, and the script picks a different random person for image A and image B (never the same person, never the same age band, and never the people in the draft being replaced), such as "a woman in her 50s of Indian heritage". The mix is set in the `people` section of `themes.json`: each entry in `groups` has a `weight` (currently white 80, Black 10, Asian 10), plus `genders`, `ages`, a `clothing` phrase (ordinary everyday clothes) and a `look` phrase (smiling, bright healthy-looking teeth, healthy skin) added to every prompt. Change the weights to change the mix. A regenerated image never repeats the previous people. The chosen people are saved in the draft and shown in the run log (`Person in image A: ...`).
-- Schedule: the daily draft is started at 10:00 UK time by the Worker's Cloudflare Cron Trigger (`worker/worker.js`, set up by the *Deploy approval Worker* workflow). The Worker setting `DRAFT_UK_HOUR` changes the hour (9 or 10 with the current trigger). There is no GitHub schedule; if a day's draft fails, run the workflow by hand.
+- Schedule: the draft is started at 10:00 UK time on Sundays and Thursdays by the Worker's Cloudflare Cron Trigger (`worker/worker.js`, set up by the *Deploy approval Worker* workflow). The Worker setting `DRAFT_DAYS` changes the days (for example `mon,wed,fri`, or `daily`); if you change it, change `post_days` in `calendar.json` to the same days so the themes rotate evenly. `DRAFT_UK_HOUR` changes the hour: 10 works all year with the current trigger, 9 only in winter (GMT) and 11 only in summer (BST); other hours need the `CRONS` line in `deploy-worker.yml` changed. There is no GitHub schedule; if a draft fails, run the workflow by hand.
 - The caption instructions and the default template are in `post_weekly.py` (`_prompts`, `fallback_caption`); banned wording is the `BANNED` list.
 - Local run: `pip install -r requirements.txt`, copy `.env.example` to `.env`, export the variables, then `python post_weekly.py generate --dry-run` (open `out/email-preview.html` to see the email).
 

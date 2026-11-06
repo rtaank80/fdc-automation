@@ -143,35 +143,61 @@ r = await post(env, T.approve2B); ok(calls[0].body.inputs.image === "B" && (awai
 env = makeEnv(); calls = [];
 await post(env, T.approveBad); ok(calls[0].body.inputs.image === "A", "an invalid image letter falls back to A");
 
-// --- daily schedule (Cloudflare Cron Trigger)
+// --- schedule (Cloudflare Cron Trigger): Sundays and Thursdays at 10:00 UK time by default
 const fire = async (env, iso) => { const logs = []; const orig = console.log; console.log = (m) => logs.push(m); try { await worker.scheduled({ scheduledTime: Date.parse(iso), cron: "0,30 9,10 * * *" }, env); } finally { console.log = orig; } return logs.join("\n"); };
 env = makeEnv(); calls = [];
-let log = await fire(env, "2026-11-03T09:00:00Z");   // GMT: 09:00 UTC is 09:00 UK
+let log = await fire(env, "2026-11-05T09:00:00Z");   // Thursday, GMT: 09:00 UTC is 09:00 UK
 ok(calls.length === 0 && log.includes("not the draft hour"), "winter: 09:00 UTC fire does nothing");
-log = await fire(env, "2026-11-03T10:00:00Z");
-ok(calls.length === 1 && calls[0].url === "https://api.github.com/repos/me/repo/actions/workflows/weekly.yml/dispatches", "winter: 10:00 UTC (10:00 UK) dispatches weekly.yml");
-ok(JSON.stringify(calls[0].body) === JSON.stringify({ ref: "main", inputs: { mode: "new", dry_run: "false", refresh_token: "true", source: "cloudflare" } }), "daily draft inputs: new, live, token refresh, source cloudflare");
-ok(env.STATE._m.get("daily:2026-11-03") === "live", "the day is recorded in KV");
-log = await fire(env, "2026-11-03T10:30:00Z");
+log = await fire(env, "2026-11-05T10:00:00Z");
+ok(calls.length === 1 && calls[0].url === "https://api.github.com/repos/me/repo/actions/workflows/weekly.yml/dispatches", "winter Thursday: 10:00 UTC (10:00 UK) dispatches weekly.yml");
+ok(JSON.stringify(calls[0].body) === JSON.stringify({ ref: "main", inputs: { mode: "new", dry_run: "false", refresh_token: "true", source: "cloudflare" } }), "scheduled draft inputs: new, live, token refresh, source cloudflare");
+ok(env.STATE._m.get("daily:2026-11-05") === "live", "the day is recorded in KV");
+log = await fire(env, "2026-11-05T10:30:00Z");
 ok(calls.length === 1 && log.includes("already started"), "the 10:30 retry fire does not make a second draft");
-await fire(env, "2026-11-04T10:00:00Z"); ok(calls.length === 2, "the next day gets its own draft");
+for (const day of ["2026-11-06", "2026-11-07", "2026-11-09", "2026-11-10", "2026-11-11"]) {   // Fri, Sat, Mon, Tue, Wed
+  log = await fire(env, `${day}T10:00:00Z`);
+  ok(calls.length === 1 && log.includes("not a draft day"), `no draft on ${day} (not Sunday or Thursday)`);
+}
+await fire(env, "2026-11-08T10:00:00Z"); ok(calls.length === 2, "Sunday gets its own draft");
+await fire(env, "2026-11-12T10:00:00Z"); ok(calls.length === 3, "and so does the next Thursday");
+ok(env.STATE._m.size === 3, "only the three draft days are recorded in KV");
 env = makeEnv(); calls = [];
-await fire(env, "2026-07-01T10:00:00Z"); ok(calls.length === 0, "summer: 10:00 UTC is 11:00 UK, does nothing");
-await fire(env, "2026-07-01T09:00:00Z"); ok(calls.length === 1, "summer: 09:00 UTC (10:00 BST) dispatches");
-await fire(env, "2026-03-29T09:00:00Z"); ok(calls.length === 2, "clock-change day (BST starts) still gets a draft at 10:00 UK");
-await fire(env, "2026-10-25T10:00:00Z"); ok(calls.length === 3, "clock-change day (GMT returns) still gets a draft at 10:00 UK");
+await fire(env, "2026-07-02T10:00:00Z"); ok(calls.length === 0, "summer: 10:00 UTC is 11:00 UK, does nothing");
+await fire(env, "2026-07-02T09:00:00Z"); ok(calls.length === 1, "summer Thursday: 09:00 UTC (10:00 BST) dispatches");
+await fire(env, "2026-03-29T09:00:00Z"); ok(calls.length === 2, "clock-change Sunday (BST starts) still gets a draft at 10:00 UK");
+await fire(env, "2026-10-25T10:00:00Z"); ok(calls.length === 3, "clock-change Sunday (GMT returns) still gets a draft at 10:00 UK");
+env = makeEnv(); calls = [];
+await fire(env, "2026-11-07T23:30:00Z"); ok(calls.length === 0, "late Saturday UTC is still Saturday in the UK: nothing");
+env = { ...makeEnv(), DRAFT_UK_HOUR: "0" }; calls = [];
+await fire(env, "2026-06-27T23:00:00Z"); ok(calls.length === 1, "the draft day follows the UK date (23:00 UTC Saturday is 00:00 BST Sunday)");
 env = makeEnv(); calls = []; ghStatus = 500;
-let threw = false; try { await fire(env, "2026-11-03T10:00:00Z"); } catch { threw = true; }
-ok(threw && !env.STATE._m.has("daily:2026-11-03"), "GitHub error: the fire fails and the day is not marked done");
-ghStatus = 204; await fire(env, "2026-11-03T10:30:00Z"); ok(calls.length === 2 && calls[1].body.inputs.mode === "new", "so the 10:30 fire retries and succeeds");
+let threw = false; try { await fire(env, "2026-11-05T10:00:00Z"); } catch { threw = true; }
+ok(threw && !env.STATE._m.has("daily:2026-11-05"), "GitHub error: the fire fails and the day is not marked done");
+ghStatus = 204; await fire(env, "2026-11-05T10:30:00Z"); ok(calls.length === 2 && calls[1].body.inputs.mode === "new", "so the 10:30 fire retries and succeeds");
 env = { ...makeEnv(), DAILY_DRAFT: "test" }; calls = [];
-await fire(env, "2026-11-03T10:00:00Z");
+await fire(env, "2026-11-05T10:00:00Z");
 ok(calls[0].body.inputs.dry_run === "true" && calls[0].body.inputs.refresh_token === "false" && calls[0].body.inputs.source === "cloudflare-test", "DAILY_DRAFT=test makes a TEST draft (cannot post)");
 env = { ...makeEnv(), DAILY_DRAFT: "off" }; calls = [];
-log = await fire(env, "2026-11-03T10:00:00Z"); ok(calls.length === 0 && log.includes("off"), "DAILY_DRAFT=off does nothing");
+log = await fire(env, "2026-11-05T10:00:00Z"); ok(calls.length === 0 && log.includes("off"), "DAILY_DRAFT=off does nothing");
 env = { ...makeEnv(), DRAFT_UK_HOUR: "9" }; calls = [];
-await fire(env, "2026-11-03T10:00:00Z"); ok(calls.length === 0, "DRAFT_UK_HOUR=9 ignores the 10:00 UK fire");
-await fire(env, "2026-11-03T09:00:00Z"); ok(calls.length === 1, "DRAFT_UK_HOUR=9 acts at 09:00 UK");
+await fire(env, "2026-11-05T10:00:00Z"); ok(calls.length === 0, "DRAFT_UK_HOUR=9 ignores the 10:00 UK fire");
+await fire(env, "2026-11-05T09:00:00Z"); ok(calls.length === 1, "DRAFT_UK_HOUR=9 acts at 09:00 UK");
+env = { ...makeEnv(), DRAFT_DAYS: "daily" }; calls = [];
+for (let d = 2; d <= 8; d++) await fire(env, `2026-11-0${d}T10:00:00Z`);
+ok(calls.length === 7, "DRAFT_DAYS=daily makes a draft every day");
+env = { ...makeEnv(), DRAFT_DAYS: "Monday, fri" }; calls = [];
+for (let d = 2; d <= 8; d++) await fire(env, `2026-11-0${d}T10:00:00Z`);
+ok(calls.length === 2 && env.STATE._m.has("daily:2026-11-02") && env.STATE._m.has("daily:2026-11-06"), "DRAFT_DAYS accepts other days, full names and spaces");
+env = { ...makeEnv(), DRAFT_DAYS: "nonsense" }; calls = [];
+for (let d = 2; d <= 8; d++) await fire(env, `2026-11-0${d}T10:00:00Z`);
+ok(calls.length === 2 && env.STATE._m.has("daily:2026-11-05") && env.STATE._m.has("daily:2026-11-08"), "an unreadable DRAFT_DAYS falls back to Sunday and Thursday");
+{
+  const src = fs.readFileSync(path.join(here, "..", "worker", "worker.js"), "utf8");
+  const workerDays = src.match(/DEFAULT_DRAFT_DAYS = "([^"]+)"/)[1].split(",");
+  const cal = JSON.parse(fs.readFileSync(path.join(here, "..", "calendar.json"), "utf8"));
+  const calDays = cal.settings.post_days.map((d) => d.slice(0, 3).toLowerCase());
+  ok(JSON.stringify([...workerDays].sort()) === JSON.stringify([...calDays].sort()), "the Worker's default draft days match post_days in calendar.json");
+}
 
 // --- post images: signed upload, served for Instagram, deleted by KV expiry
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from("fdc-test")]);
