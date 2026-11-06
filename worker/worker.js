@@ -11,7 +11,7 @@
 //   payload: a=action, d=draft run id, c=option number, l=option label, w=ISO week, e=expiry (epoch s),
 //            i=chosen image letter (A or B), t=post topic, x=1 for a test (dry run) draft
 //   w is the draft chain id: one scheduled run plus any regenerations of it. There is no weekly limit;
-//   how often posts happen is controlled by the schedule in weekly.yml.
+//   how often drafts are made is controlled by the schedule below (DRAFT_DAYS and DRAFT_UK_HOUR).
 //
 // Settings (Worker > Settings > Variables and secrets, Bindings):
 //   LINK_SECRET  (secret)  same value as the LINK_SECRET secret in GitHub
@@ -20,9 +20,11 @@
 //   GH_REF       (text, optional) branch holding the workflows, default "main"
 //   MAX_REGENS   (text, optional) regenerations allowed per draft, default 3
 //   STATE        (KV namespace binding) remembers used links, each draft's decision and its regeneration count
-//   DAILY_DRAFT  (text, optional) what the daily schedule does: "live" (default) a real draft, "test" a TEST
+//   DAILY_DRAFT  (text, optional) what the schedule does: "live" (default) a real draft, "test" a TEST
 //                draft that cannot post, "off" nothing
-//   DRAFT_UK_HOUR (text, optional) UK hour (0-23) at which the daily draft starts, default 10
+//   DRAFT_UK_HOUR (text, optional) UK hour (0-23) at which the scheduled draft starts, default 10
+//   DRAFT_DAYS   (text, optional) UK days a draft is made, e.g. "sun,thu" (the default) or "daily". If you change
+//                the days, change "post_days" in calendar.json to match, so the themes still rotate evenly
 //   IMAGE_HOURS  (text, optional) hours an uploaded post image is kept before Cloudflare deletes it, default 48
 //
 // Image upload (IMAGE_HOST=cloudflare in publish.yml): the body is the JPEG itself, with headers
@@ -33,12 +35,14 @@
 // in KV under a random name with an expiry, so Cloudflare deletes it by itself; the GitHub publish job keeps a
 // private archive copy in the repo's images/ folder.
 
-// Daily schedule (Cloudflare Cron Trigger, set by deploy-worker.yml): it fires at :00 and :30 of 09:00 and
-// 10:00 UTC. Only the fires in the chosen UK hour act, so the draft starts at 10:00 UK time in both GMT and BST;
-// the :30 fire is a retry for when GitHub refused the first one. KV key "daily:<UK date>" stops a second draft
-// on the same day. The draft it starts is a normal one: nothing is posted until the approver clicks Approve.
+// Schedule (Cloudflare Cron Trigger, set by deploy-worker.yml): it fires every day at :00 and :30 of 09:00 and
+// 10:00 UTC. Only the fires on a draft day (DRAFT_DAYS, default Sunday and Thursday, UK date) in the chosen UK
+// hour act, so the draft starts at 10:00 UK time in both GMT and BST; the :30 fire is a retry for when GitHub
+// refused the first one. KV key "daily:<UK date>" stops a second draft on the same day. The draft it starts is a normal one: nothing is posted until the approver clicks Approve.
 
 const DAY = 86400;
+const DEFAULT_DRAFT_DAYS = "sun,thu";       // keep in step with "post_days" in calendar.json
+const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;   // Instagram's own limit for a JPEG
 const UPLOAD_WINDOW = 300;                 // seconds an upload signature stays valid
 
@@ -78,27 +82,43 @@ export default {
   // Cloudflare Cron Trigger. A thrown error marks the fire as failed in the Worker's logs.
   async scheduled(controller, env) {
     const result = await dailyDraft(new Date(controller.scheduledTime || Date.now()), env);
-    console.log(`daily draft: ${result}`);
+    console.log(`scheduled draft: ${result}`);
   },
 };
 
-// The UK date (YYYY-MM-DD) and hour for a moment in time, following GMT/BST.
+// The UK date (YYYY-MM-DD), weekday ("sun".."sat") and hour for a moment in time, following GMT/BST.
 function ukClock(when) {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-GB", {
       timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23",
+      weekday: "short",
     }).formatToParts(when).map((x) => [x.type, x.value]),
   );
-  return { date: `${parts.year}-${parts.month}-${parts.day}`, hour: parseInt(parts.hour, 10) };
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    weekday: parts.weekday.slice(0, 3).toLowerCase(),
+    hour: parseInt(parts.hour, 10),
+  };
 }
 
-// Starts the day's draft (weekly.yml, mode new) once per UK day. Returns a short description of what it did.
+// The weekdays a draft is made on, from DRAFT_DAYS ("sun,thu", "daily"). An entry that is not a day name is
+// ignored; if none is left the default is used, so a typo cannot stop or multiply the drafts.
+function draftDays(env) {
+  const text = String(env.DRAFT_DAYS || DEFAULT_DRAFT_DAYS).trim().toLowerCase();
+  if (text === "daily" || text === "all") return WEEKDAYS;
+  const days = text.split(/[\s,]+/).map((d) => d.slice(0, 3)).filter((d) => WEEKDAYS.includes(d));
+  return days.length ? days : DEFAULT_DRAFT_DAYS.split(",");
+}
+
+// Starts the day's draft (weekly.yml, mode new) once per UK draft day. Returns a short description of what it did.
 async function dailyDraft(when, env) {
   const setting = String(env.DAILY_DRAFT || "live").trim().toLowerCase();
   if (setting === "off") return "off (DAILY_DRAFT=off)";
   const test = setting === "test";
   const hour = parseInt(env.DRAFT_UK_HOUR || "10", 10);
   const uk = ukClock(when);
+  const days = draftDays(env);
+  if (!days.includes(uk.weekday)) return `not a draft day (UK ${uk.weekday}, draft days ${days.join(",")})`;
   if (uk.hour !== hour) return `not the draft hour (UK ${uk.hour}:00, draft hour ${hour}:00)`;
   const key = `daily:${uk.date}`;
   if (await env.STATE.get(key)) return `already started for ${uk.date}`;

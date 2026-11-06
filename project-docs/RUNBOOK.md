@@ -1,10 +1,10 @@
 # Runbook
 
 ## Everyday
-- **Draft emails** arrive from the daily run. Pick a caption and an image, press Confirm on the page that opens. Ignore a draft to post nothing.
+- **Draft emails** arrive from the scheduled run on Sundays and Thursdays. Pick a caption and an image, press Confirm on the page that opens. Ignore a draft to post nothing.
 - **Run a draft now:** Actions > "Weekly Instagram draft" > Run workflow. Leave "Dry run" on for a test (placeholder images, email marked TEST, cannot post); turn it off for a real draft. `theme_id` forces any theme from `themes.json` or `calendar.json`.
-- **When it runs:** the Worker's Cron Trigger starts the draft at 10:00 UK time. Change the hour with the Worker setting `DRAFT_UK_HOUR` (9 or 10 with the current trigger; other hours also need the `CRONS` line in `deploy-worker.yml`). Set `DAILY_DRAFT` to `test` for TEST drafts or `off` to pause. `weekly.yml` has no GitHub schedule.
-- **Check the daily run:** in Actions, the run is called "Daily draft (Cloudflare schedule)".
+- **When it runs:** the Worker's Cron Trigger starts the draft at 10:00 UK time on Sundays and Thursdays. Change the days with the Worker setting `DRAFT_DAYS` (for example `mon,wed,fri` or `daily`) and set `post_days` in `calendar.json` to the same days. Change the hour with `DRAFT_UK_HOUR`: 10 works all year with the current trigger, 9 only in winter (GMT), 11 only in summer (BST); any other hour needs the `CRONS` line in `deploy-worker.yml` too, or no draft is made. Set `DAILY_DRAFT` to `test` for TEST drafts or `off` to pause. `weekly.yml` has no GitHub schedule.
+- **Check the scheduled run:** in Actions, the run is called "Scheduled draft (Cloudflare schedule)" ("Daily draft" in runs before 6 Nov 2026).
 - **Change the people mix, models, styles:** `themes.json`. **Seasonal themes and mixing:** `calendar.json`.
 
 ## Changing the Worker
@@ -24,7 +24,7 @@ Do the steps in this order; the repo must stay public until steps 1 to 3 are don
 3. **Tokens.** In GitHub > Settings > Developer settings > Fine-grained tokens, check `GH_TOKEN` (Worker) and `GH_PAT` (token refresh) are set to "Only select repositories" with this repo. A "Public repositories" token stops working when the repo goes private.
 4. **Billing guard.** Private repos get 2,000 free Actions minutes a month (public repos have no limit). Normal use is about 200 to 400. A draft that waits out Cloudflare's daily allowance can run up to 180 minutes, so set the Actions spending limit to 0 (Settings > Billing) so runs stop rather than charge.
 5. **Flip it.** Settings > General > Danger Zone > Change visibility > Private. Then turn off Settings > Pages.
-6. **Check.** The next daily draft arrives, a regeneration button works, an approval posts, and the Meta app still shows the privacy URL as valid.
+6. **Check.** The next scheduled draft arrives, a regeneration button works, an approval posts, and the Meta app still shows the privacy URL as valid.
 7. **Update docs.** `CLAUDE.md` ("The repo is public" section), `README.md` setup step 1, `project-docs/DECISIONS.md`.
 
 Making it private does not remove anything already public: earlier clones and forks keep their copies.
@@ -36,7 +36,7 @@ Making it private does not remove anything already public: earlier clones and fo
 | Draft run takes over an hour, log says "daily allowance is used up. Waiting 30 minutes" | Cloudflare answered 429 "you have used up your daily free allocation" (code 4006). In early Nov 2026 this happened even though the Workers AI dashboard showed 0 neurons used, and the same request worked hours later. The draft waits 30, 45 and 60 minutes between attempts (also retrying the AI caption). If all fail, the run fails and the approver gets an email "Today's Instagram draft could not be made"; start a draft by hand later. If it keeps happening, post the request ID from the log on the Cloudflare Community forum, or consider the Workers Paid plan |
 | Only one image in the email | One model failed after its retries; the log says which. The other image still works |
 | "Invalid control character" when making a Cloudflare caption | Fixed by parsing the model's JSON with `strict=False`; if it returns, check `_parse_caption_json` |
-| No draft email by 11:00 UK | Check Actions for "Daily draft (Cloudflare schedule)". If missing: Cloudflare > the Worker > Settings > Trigger Events should list `0,30 9,10 * * *` (rerun "Deploy approval Worker" to set it), `DAILY_DRAFT` must not be `off`, and the Worker's logs show `daily draft: ...` for each fire. If the run exists but failed, the approver should also have had a "could not be made" email; read the run's log, fix the cause and run the workflow by hand |
+| No draft email by 11:00 UK on a Sunday or Thursday | Check Actions for "Scheduled draft (Cloudflare schedule)". If missing: Cloudflare > the Worker > Settings > Trigger Events should list `0,30 9,10 * * *` (rerun "Deploy approval Worker" to set it), `DAILY_DRAFT` must not be `off`, `DRAFT_DAYS` (if set) must include the day, and the Worker's logs show `scheduled draft: ...` for each fire ("not a draft day" on the other days is normal). If the run exists but failed, the approver should also have had a "could not be made" email; read the run's log, fix the cause and run the workflow by hand |
 | "This draft has already been decided" | The one-decision-per-draft rule. If a real draft was blocked by mistake, delete its `decided:` key in the Worker's KV namespace |
 | Buttons behave like an old version or `Post with image B` posts image A | The Cloudflare copy of the Worker was not updated. Check the latest "Deploy approval Worker" run (missing `CLOUDFLARE_DEPLOY_TOKEN` only gives a warning) |
 | Email does not arrive | Check the SMTP secrets and `SMTP_PORT` (587 STARTTLS by default; 465 for SSL), the junk folder, and the generate job log for "Approval email sent" |

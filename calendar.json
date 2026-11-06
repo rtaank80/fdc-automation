@@ -1,8 +1,10 @@
 {
   "_note": "Seasonal themes mixed into the normal rotation. Each month lists themes in the same format as themes.json. Optional per theme: \"days\": [first,last] limits it to those days of the month; \"pin\": true makes it take every post in its days. Dates of awareness months and days change, so check them each year. Keep wording factual: no results guarantees or claims.",
   "settings": {
+    "_rotation_note": "rotation \"posts\" moves the themes on one step per draft day listed in post_days, so each post gets the next theme. Keep post_days the same as the Worker's draft days (DRAFT_DAYS, default sun,thu). \"daily\" moves on every calendar day, \"weekly\" once a week.",
     "seasonal_every": 3,
-    "rotation": "daily"
+    "rotation": "posts",
+    "post_days": ["sun", "thu"]
   },
   "months": {
     "1": [

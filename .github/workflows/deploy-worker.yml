@@ -2,7 +2,7 @@ name: Deploy approval Worker
 
 # Uploads worker/worker.js to the Cloudflare Worker whenever it changes on main (or when started by hand).
 # The Worker's existing secrets, text settings and KV binding are kept as they are (keep_bindings), so only the code changes.
-# It also sets the Worker's Cron Trigger that starts the daily draft (see "Set the daily schedule" below).
+# It also sets the Worker's Cron Trigger that starts the scheduled draft (see "Set the schedule" below).
 #
 # Needs, in GitHub:
 #   secret   CLOUDFLARE_ACCOUNT_ID    (already used for Workers AI)
@@ -59,9 +59,11 @@ jobs:
           python3 -c "import json;d=json.load(open('/tmp/resp.json'));assert d.get('success'),d" || { echo "::error::Cloudflare did not report success"; head -c 600 /tmp/resp.json; exit 1; }
           echo "Uploaded."
           echo "$NAME" > /tmp/worker-name
-      - name: Set the daily schedule (Cloudflare Cron Trigger)
-        # Times are UTC. The Worker fires at :00 and :30 of 09:00 and 10:00 UTC and only acts in the UK hour set by
-        # DRAFT_UK_HOUR (default 10), so the draft starts at 10:00 UK time in both GMT and BST; :30 is a retry.
+      - name: Set the schedule (Cloudflare Cron Trigger)
+        # Times are UTC. The Worker fires every day at :00 and :30 of 09:00 and 10:00 UTC and only acts on the UK
+        # days set by DRAFT_DAYS (default Sunday and Thursday) in the UK hour set by DRAFT_UK_HOUR (default 10), so
+        # the draft starts at 10:00 UK time in both GMT and BST; :30 is a retry. Days are chosen in the Worker, not
+        # here, so this line does not change when the days do.
         env:
           ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}
